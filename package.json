@@ -1,0 +1,33 @@
+{
+  "name": "satellite-orbit-viewer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Interactive 3D visualization of artificial satellite orbits",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "fetch:textures": "node scripts/fetch-textures.mjs",
+    "fetch:tle": "node scripts/fetch-tle.mjs"
+  },
+  "dependencies": {
+    "satellite.js": "^7.1.0",
+    "three": "^0.186.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/three": "^0.186.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.0.0",
+    "vite": "^8.0.0",
+    "vitest": "^5.0.0"
+  }
+}

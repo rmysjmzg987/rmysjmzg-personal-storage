@@ -1,0 +1,83 @@
+:root {
+  --hud-bg: rgba(10, 16, 30, 0.55);
+  --hud-border: rgba(120, 170, 255, 0.18);
+  --hud-text: #dbe6f5;
+  --accent-warm: #ffb547;
+  --accent-cool: #39e6c3;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #05070f;
+  color: var(--hud-text);
+  font-family: system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  font-size: 13px;
+}
+
+.hud-top {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 8px 18px;
+  background: var(--hud-bg);
+  border: 1px solid var(--hud-border);
+  border-radius: 999px;
+  backdrop-filter: blur(10px);
+  white-space: nowrap;
+}
+
+.hud-brand {
+  letter-spacing: 0.04em;
+}
+
+.hud-clock {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.06em;
+}
+
+.hud-rate,
+.hud-fps,
+.hud-quality {
+  opacity: 0.78;
+}
+
+.hud-note {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  opacity: 0.62;
+  white-space: nowrap;
+}
+
+.hud-panel {
+  pointer-events: auto;
+  background: var(--hud-bg);
+  border: 1px solid var(--hud-border);
+  border-radius: 14px;
+  backdrop-filter: blur(10px);
+  padding: 12px 14px;
+}
