@@ -95,16 +95,19 @@ tests/hud.test.ts
     "three": "^0.186.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.0.0",
     "@types/three": "^0.186.0",
     "eslint": "^9.0.0",
     "prettier": "^3.0.0",
-    "typescript": "^7.0.0",
+    "typescript": "^5.9.0",
     "typescript-eslint": "^8.0.0",
     "vite": "^8.0.0",
     "vitest": "^5.0.0"
   }
 }
 ```
+
+说明：最初计划用 `typescript@^7`（原生编译器），但 `typescript-eslint@8` 尚未声明支持 TS 7，因此实际采用 `^5.9.0`，避免 lint/类型工具链冲突。若后续 typescript-eslint 支持 TS 7 再升级。
 
 - [ ] **Step 2：安装依赖**
 
