@@ -65,6 +65,14 @@ describe('classifyOrbit rules', () => {
   it('prefers highly elliptical over everything else', () => {
     expect(classifyOrbit({ ...base, eccentricity: 0.7, perigeeAltitudeKm: 1000, periodSeconds: 43000 })).toBe('heo');
   });
+  it('treats very eccentric high-apogee orbits as HEO even with a high perigee', () => {
+    expect(
+      classifyOrbit({ ...base, eccentricity: 0.79, perigeeAltitudeKm: 29450, apogeeAltitudeKm: 91689, periodSeconds: 200000 }),
+    ).toBe('heo');
+    expect(
+      classifyOrbit({ ...base, eccentricity: 0.7, perigeeAltitudeKm: 2613, apogeeAltitudeKm: 37757, periodSeconds: 43000 }),
+    ).toBe('heo');
+  });
   it('splits geosynchronous by inclination', () => {
     const geoSync = { ...base, periodSeconds: 1436 * 60, perigeeAltitudeKm: 35786, apogeeAltitudeKm: 35786 };
     expect(classifyOrbit({ ...geoSync, inclinationDeg: 0.1 })).toBe('geo');

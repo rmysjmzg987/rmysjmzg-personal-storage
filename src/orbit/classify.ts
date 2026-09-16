@@ -15,6 +15,8 @@ export const GEO_PERIOD_MIN_MINUTES = 1400;
 export const GEO_PERIOD_MAX_MINUTES = 1480;
 export const MEO_PERIOD_MIN_MINUTES = 600;
 export const LOW_ORBIT_CEILING_KM = 2000;
+/** 远地点高到这个程度且有明显偏心率时也算大椭圆（例如 XMM-Newton、子午线系列） */
+export const HEO_APOGEE_CEILING_KM = 35000;
 
 /**
  * 轨道分类：按规格 §4 的优先级自上而下判定
@@ -25,6 +27,7 @@ export function classifyOrbit(shape: OrbitShape): OrbitClassKey {
   const periodMinutes = shape.periodSeconds === null ? null : shape.periodSeconds / 60;
 
   if (eccentricity > 0.25 && perigeeAltitudeKm < LOW_ORBIT_CEILING_KM) return 'heo';
+  if (eccentricity > 0.4 && shape.apogeeAltitudeKm > HEO_APOGEE_CEILING_KM) return 'heo';
 
   if (periodMinutes !== null && periodMinutes >= GEO_PERIOD_MIN_MINUTES && periodMinutes <= GEO_PERIOD_MAX_MINUTES) {
     return inclinationDeg < 5 ? 'geo' : 'igso';

@@ -23,8 +23,16 @@ import {
   type QualityLevel,
 } from './core/quality';
 import { createFollowController } from './core/followCamera';
-import { loadData, displayName, type DataBundle } from './orbit/catalog';
+import { loadData, displayName, buildRecord, type DataBundle } from './orbit/catalog';
 import type { SatelliteRecord } from './orbit/types';
+import {
+  nextCustomNoradId,
+  parseStore,
+  readStore,
+  writeStore,
+  type CustomStoreData,
+} from './orbit/custom';
+import { mountAddSatellite, type AddSatelliteEntry } from './ui/addSatellite';
 import { createSatelliteScene, type SatelliteSceneHandle } from './viz/satelliteScene';
 import { createFootprint } from './viz/footprint';
 import { createCityLabels, cityKey, isCityWithin, type CityLabelHandle } from './ui/cityLabels';
@@ -34,6 +42,8 @@ import { t, type Lang } from './ui/i18n';
 
 const FALLBACK_SNAPSHOT = '2026-09-16';
 const HEO_PERIGEE = 0.25;
+/** 城市高亮判定比真实覆盖圈略宽，光锥"掠过"时就能看到变色效果 */
+const CITY_HIGHLIGHT_MARGIN = 1.6;
 
 function formatDegrees(value: number, positive: string, negative: string): string {
   const hemisphere = value >= 0 ? positive : negative;
@@ -112,12 +122,93 @@ async function bootstrap(): Promise<void> {
   let data: DataBundle | null = null;
   let satelliteScene: SatelliteSceneHandle | null = null;
   let records: SatelliteRecord[] = [];
+  let customStore: CustomStoreData = readStore();
   let cityLabels: CityLabelHandle | null = null;
   let cityUnits: { key: string; unit: { x: number; y: number; z: number } }[] = [];
   const coveredCities = new Set<string>();
 
   const recordById = (id: string | null) => (id ? records.find((record) => record.id === id) ?? null : null);
   const selectedRecord = () => recordById(state.selectedId);
+
+  // ---- 自定义卫星：预制 + 启用的库卫星 + 用户自定义 ----
+  function rebuildRecords(): SatelliteRecord[] {
+    if (!data) return [];
+    const enabled = new Set(customStore.enabledLibraryIds);
+    const base = data.records.filter((record) => record.preset || enabled.has(record.noradId));
+    const custom = customStore.customSatellites.map((meta) =>
+      buildRecord(meta, data!.orbitTypeByKey, { custom: true, idPrefix: 'user' }),
+    );
+    return [...base, ...custom];
+  }
+
+  function persistStore(): void {
+    writeStore(customStore);
+  }
+
+  function refreshScene(): void {
+    if (!data) return;
+    records = rebuildRecords();
+    satelliteScene?.setRecords(records);
+    if (state.selectedId && !records.some((record) => record.id === state.selectedId)) {
+      clearSelection();
+    } else if (state.selectedId) {
+      updateDetail();
+    }
+    hud.refresh();
+  }
+
+  function altitudeRangeLabel(record: SatelliteRecord): string {
+    const perigee = record.derived.perigeeAltitudeKm;
+    const apogee = record.derived.apogeeAltitudeKm;
+    if (!Number.isFinite(perigee) || !Number.isFinite(apogee)) return '—';
+    if (Math.abs(apogee - perigee) < 40) return `≈ ${perigee.toFixed(0)} km`;
+    return `${perigee.toFixed(0)}–${apogee.toFixed(0)} km`;
+  }
+
+  function entryOf(record: SatelliteRecord, kind: AddSatelliteEntry['kind'], active: boolean): AddSatelliteEntry {
+    const lang = state.lang;
+    const type = data?.orbitTypeByKey.get(record.derived.orbitClass);
+    return {
+      noradId: record.noradId,
+      name: displayName(record, lang),
+      secondary: lang === 'zh' ? record.label ?? '' : record.labelZh ?? '',
+      groupKey: kind === 'custom' ? 'custom' : record.group,
+      groupLabel:
+        kind === 'custom'
+          ? t(lang, 'libCustom')
+          : (data?.groups.find((group) => group.key === record.group)?.[lang === 'zh' ? 'zh' : 'en'] ?? record.group),
+      kind,
+      active,
+      typeLabel: type ? (lang === 'zh' ? type.zh : type.en) : record.derived.orbitClass,
+      altitudeLabel: altitudeRangeLabel(record),
+    };
+  }
+
+  function libraryEntries(): AddSatelliteEntry[] {
+    if (!data) return [];
+    const activeIds = new Set(records.map((record) => record.id));
+    const groupOrder = new Map(data.groups.map((group, index) => [group.key, index]));
+    const entries: AddSatelliteEntry[] = [];
+    for (const record of data.records) {
+      entries.push(
+        entryOf(record, record.preset ? 'preset' : 'library', record.preset === true || activeIds.has(record.id)),
+      );
+    }
+    for (const record of records) {
+      if (record.custom) entries.push(entryOf(record, 'custom', true));
+    }
+    // 同一分组的预设与库卫星排在一起，分组顺序沿用 catalog 定义
+    entries.sort((a, b) => {
+      const orderA = groupOrder.get(a.groupKey) ?? groupOrder.size;
+      const orderB = groupOrder.get(b.groupKey) ?? groupOrder.size;
+      if (orderA !== orderB) return orderA - orderB;
+      if (a.kind === b.kind) return 0;
+      if (a.kind === 'preset') return -1;
+      if (b.kind === 'preset') return 1;
+      return a.kind === 'library' ? -1 : 1;
+    });
+    return entries;
+  }
 
   const tooltip = document.createElement('div');
   tooltip.className = 'hover-tip';
@@ -202,6 +293,56 @@ async function bootstrap(): Promise<void> {
     detail.update(null);
   }
 
+  const addSatellite = mountAddSatellite(hudRoot, {
+    lang: () => state.lang,
+    entries: () => libraryEntries(),
+    nextNoradId: () => nextCustomNoradId(records.map((record) => record.noradId)),
+    onAddCustom: (meta) => {
+      if (records.some((record) => record.noradId === meta.noradId)) {
+        showToast(t(state.lang, 'toastExists', { name: meta.name }));
+        return;
+      }
+      customStore.customSatellites.push(meta);
+      persistStore();
+      refreshScene();
+      showToast(t(state.lang, 'toastCustomAdded', { name: meta.name }));
+      addSatellite.close();
+    },
+    onToggle: (noradId) => {
+      const customIndex = customStore.customSatellites.findIndex((sat) => sat.noradId === noradId);
+      if (customIndex >= 0) {
+        const [removed] = customStore.customSatellites.splice(customIndex, 1);
+        persistStore();
+        refreshScene();
+        showToast(t(state.lang, 'toastRemoved', { name: removed.name }));
+        return;
+      }
+      const meta = data?.records.find((record) => record.noradId === noradId);
+      const name = meta ? displayName(meta, state.lang) : `NORAD ${noradId}`;
+      const enabled = customStore.enabledLibraryIds.includes(noradId);
+      customStore.enabledLibraryIds = enabled
+        ? customStore.enabledLibraryIds.filter((id) => id !== noradId)
+        : [...customStore.enabledLibraryIds, noradId];
+      persistStore();
+      refreshScene();
+      showToast(t(state.lang, enabled ? 'toastRemoved' : 'toastAdded', { name }));
+    },
+    onImport: (rawText) => {
+      const parsed = parseStore(rawText);
+      const count = parsed.customSatellites.length + parsed.enabledLibraryIds.length;
+      if (count === 0) {
+        showToast(t(state.lang, 'toastImportFailed'));
+        return;
+      }
+      customStore = parsed;
+      persistStore();
+      refreshScene();
+      showToast(t(state.lang, 'toastImported', { count }));
+    },
+    exportData: () => customStore,
+    notify: (message) => showToast(message),
+  });
+
   const detail = mountDetail(detailRoot, {
     onClose: () => clearSelection(),
     onToggleLock: () => {
@@ -249,6 +390,7 @@ async function bootstrap(): Promise<void> {
         state.lang = state.lang === 'zh' ? 'en' : 'zh';
         hud.refresh();
         updateDetail();
+        addSatellite.refresh();
       },
       onToggleLayer: (key) => {
         state.layers[key] = !state.layers[key];
@@ -257,7 +399,7 @@ async function bootstrap(): Promise<void> {
         hud.refresh();
       },
       onAddSatellite: () => {
-        showToast(state.lang === 'zh' ? '卫星库即将上线' : 'Satellite library coming soon');
+        addSatellite.open();
       },
     },
   );
@@ -337,7 +479,7 @@ async function bootstrap(): Promise<void> {
     data = await loadData(base);
     state.snapshotDate = data.snapshotDate;
     state.sourceLabel = data.source;
-    records = data.records.filter((record) => record.preset);
+    records = rebuildRecords();
     satelliteScene = createSatelliteScene(records);
     ctx.scene.add(satelliteScene.group);
     cityLabels = createCityLabels(hudRoot, data.cities);
@@ -412,8 +554,9 @@ async function bootstrap(): Promise<void> {
           const nadir = footprint.nadirUnitEci();
           const coverage = footprint.coverageAngleRad();
           if (nadir && coverage > 0) {
+            const highlight = coverage * CITY_HIGHLIGHT_MARGIN;
             for (const city of cityUnits) {
-              if (isCityWithin(rotateZ(city.unit, gmstRad), nadir, coverage)) {
+              if (isCityWithin(rotateZ(city.unit, gmstRad), nadir, highlight)) {
                 coveredCities.add(city.key);
               }
             }
