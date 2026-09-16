@@ -49,7 +49,7 @@ import { mountDetail, type DetailView } from './ui/detail';
 import { mountSearchBar } from './ui/searchBar';
 import { t, type Lang } from './ui/i18n';
 import { createCloudShell } from './viz/cloudShell';
-import { CLOUD_WIDTH, loadCloudSnapshot } from './weather/clouds';
+import { CLOUD_WIDTH_LADDER, loadCloudSnapshot } from './weather/clouds';
 import {
   WEATHER_STALE_MS,
   fetchCityWeather,
@@ -114,6 +114,8 @@ async function bootstrap(): Promise<void> {
 
   let quality: QualityLevel = 'medium';
   let settings = qualitySettings(quality);
+  // 当前云图上球的那张画布的宽度（0 表示还没上过图），用来在刷新时直接要同一档
+  let cloudSizePx = 0;
 
   const clock = createClock({ rate: 60 });
   const follow = createFollowController({ camera: ctx.camera, controls: ctx.controls });
@@ -156,8 +158,8 @@ async function bootstrap(): Promise<void> {
     hoveredId: null as string | null,
     locked: false,
     layers: { footprint: true, graticule: true, orbits: true } as Record<LayerKey, boolean>,
-      snapshotDate: FALLBACK_SNAPSHOT,
-      sourceLabel: 'CelesTrak',
+    snapshotDate: FALLBACK_SNAPSHOT,
+    sourceLabel: 'CelesTrak',
     mode: 'orbit' as AppMode,
     meteoOnly: false,
     weatherStatus: 'idle' as WeatherStatus,
@@ -618,19 +620,33 @@ async function bootstrap(): Promise<void> {
     cloudBusy = true;
     state.weatherStatus = 'loading';
     hud.refresh();
+    // 已经有底图时（手动刷新）直接从最大尺寸开始，免得画面先退回小图再爬上来
+    const ladder =
+      force && cloudShell.hasTexture() ? [lastCloudSize()] : CLOUD_WIDTH_LADDER;
     try {
-      const snapshot = await loadCloudSnapshot({ width: CLOUD_WIDTH[quality] });
-      cloudShell.setTexture(snapshot.canvas);
-      state.cloudDate = snapshot.date;
-      state.weatherStatus = 'ready';
+      for (const width of ladder) {
+        // 先拿小图把画面点亮，再在后台换成大图；中途失败就保留已经拿到的
+        const snapshot = await loadCloudSnapshot({ width, date: state.cloudDate ?? undefined });
+        cloudShell.setTexture(snapshot.canvas);
+        cloudSizePx = snapshot.canvas.width;
+        state.cloudDate = snapshot.date;
+        state.weatherStatus = 'ready';
+        applyMode();
+        hud.refresh();
+      }
     } catch (error) {
       console.warn('[weather] cloud imagery unavailable', error);
-      state.weatherStatus = 'error';
+      if (!cloudShell.hasTexture()) state.weatherStatus = 'error';
     } finally {
       cloudBusy = false;
       applyMode();
       hud.refresh();
     }
+  }
+
+  function lastCloudSize(): number {
+    // 实际贴上球的那一档，刷新时按它重新请求；还没上过图就按阶梯最高一档
+    return cloudSizePx || CLOUD_WIDTH_LADDER[CLOUD_WIDTH_LADDER.length - 1];
   }
 
   async function loadWeather(force = false): Promise<void> {
@@ -951,6 +967,7 @@ async function bootstrap(): Promise<void> {
       debugEl.textContent = [
         `mode=${state.mode}${weatherMode && state.meteoOnly ? '+meteo' : ''}`,
         `cloud=${state.cloudDate ?? '—'} status=${state.weatherStatus}`,
+        `cloudSize=${lastCloudSize()} px`,
         `weather cities=${weather ? weather.size : 0}`,
         `cam r=${cameraRadius.toFixed(0)} km`,
         `dist=${target.toFixed(0)} km`,

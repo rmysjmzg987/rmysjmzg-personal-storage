@@ -8,6 +8,7 @@ import {
 } from '../src/weather/forecast';
 import {
   CLOUD_LAYER,
+  CLOUD_WIDTH_LADDER,
   buildCloudUrl,
   cloudCropRect,
   loadCloudSnapshot,
@@ -152,9 +153,49 @@ describe('cloud imagery', () => {
     expect(url).toContain('TIME=2026-09-15');
   });
 
-  it('crops the middle half of the square canvas (equirect world)', () => {
-    expect(cloudCropRect(2048, 2048)).toEqual({ sx: 0, sy: 512, sw: 2048, sh: 1024 });
-    expect(cloudCropRect(1024, 1024)).toEqual({ sx: 0, sy: 256, sw: 1024, sh: 512 });
+  it('crops the real world band out of the square canvas', () => {
+    // 接口把世界图铺在画布高度的 26.17% ~ 69.92%（带宽固定 7/16），这条带才对应纬度 ±90°
+    expect(cloudCropRect(1024, 1024)).toEqual({ sx: 0, sy: 268, sw: 1024, sh: 448 });
+    expect(cloudCropRect(2048, 2048)).toEqual({ sx: 0, sy: 536, sw: 2048, sh: 896 });
+    expect(cloudCropRect(4096, 4096)).toEqual({ sx: 0, sy: 1072, sw: 4096, sh: 1792 });
+    expect(cloudCropRect(6144, 6144)).toEqual({ sx: 0, sy: 1608, sw: 6144, sh: 2688 });
+  });
+
+  it('keeps the base map ladder monotonic and within the server limit', () => {
+    const sizes = [...CLOUD_WIDTH_LADDER];
+    expect(sizes.length).toBeGreaterThan(1);
+    expect(sizes).toEqual([...sizes].sort((a, b) => a - b));
+    // 实测 8192 会返回全黑（超出服务端上限），不能图省事直接要最大那张
+    expect(Math.max(...sizes)).toBeLessThanOrEqual(6144);
+  });
+
+  it('reuses a fixed date when stepping up the ladder', async () => {
+    const urls: string[] = [];
+    const snapshot = await loadCloudSnapshot({
+      width: 2048,
+      date: '2026-09-15',
+      fetchImpl: (async (url: string) => {
+        urls.push(String(url));
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => 'true' },
+          blob: async () => new Blob([]),
+        } as unknown as Response;
+      }) as unknown as typeof fetch,
+      decodeImpl: async () => ({ width: 2048, height: 2048 }) as unknown as CanvasImageSource & {
+        width: number;
+        height: number;
+      },
+      createCanvasImpl: ((width: number, height: number) =>
+        ({ width, height, getContext: () => ({ drawImage: () => undefined }) }) as unknown as HTMLCanvasElement) as (
+        width: number,
+        height: number,
+      ) => HTMLCanvasElement,
+    });
+    expect(urls).toHaveLength(1);
+    expect(urls[0]).toContain('TIME=2026-09-15');
+    expect(snapshot.date).toBe('2026-09-15');
   });
 
   it('loads, crops and returns the canvas', async () => {
@@ -189,8 +230,8 @@ describe('cloud imagery', () => {
     expect(snapshot.date).toBe('2026-09-15');
     expect(snapshot.layer).toBe(CLOUD_LAYER);
     expect(snapshot.canvas.width).toBe(2048);
-    expect(snapshot.canvas.height).toBe(1024);
-    expect(drawn[0]).toEqual([image, 0, 512, 2048, 1024, 0, 0, 2048, 1024]);
+    expect(snapshot.canvas.height).toBe(896);
+    expect(drawn[0]).toEqual([image, 0, 536, 2048, 896, 0, 0, 2048, 896]);
   });
 
   it('falls back to the day before when the latest day has no data', async () => {

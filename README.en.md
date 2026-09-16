@@ -4,7 +4,7 @@ A self-contained, front-end-only 3D satellite orbit visualiser. It uses real TLE
 
 > Data accuracy is for demonstration and visualisation only — not for operational use.
 
-Change history lives in [CHANGELOG.md](CHANGELOG.md) and on the [Releases page](https://github.com/rmysjmzg987/rmysjmzg-personal-storage/releases); the current release is **v0.4.0**.
+Change history lives in [CHANGELOG.md](CHANGELOG.md) and on the [Releases page](https://github.com/rmysjmzg987/rmysjmzg-personal-storage/releases); the current release is **v0.4.1**.
 
 ## Highlights
 
@@ -105,7 +105,7 @@ The honest version of "live": there is no free, key-less, browser-direct (CORS-e
 - **Propagation**: SGP4 via [satellite.js](https://github.com/shashwatak/satellite-js), run locally against device time.
 - **Cities**: `public/data/cities.json` (102 cities).
 - **Textures**: NASA Blue Marble topo/bathymetry (day, 8192x4096) and NASA VIIRS 2012 night lights (8192x4096), both equirectangular and registered to the rotation angle and city coordinates. The shader adds distance-attenuated terrain relief lighting and a sea glint, so close-ups look dimensional without turning the whole globe speckled.
-- **Cloud imagery**: NASA GIBS / Worldview Snapshot (`wvs.earthdata.nasa.gov`, CORS `*`, no key, exposes a `Data-Present` header), layer `VIIRS_NOAA20_CorrectedReflectance_TrueColor`. It requests yesterday in UTC by default and walks back another day when the imagery is not ready yet.
+- **Cloud imagery**: NASA GIBS / Worldview Snapshot (`wvs.earthdata.nasa.gov`, CORS `*`, no key, exposes a `Data-Present` header), layer `VIIRS_NOAA20_CorrectedReflectance_TrueColor`. It requests yesterday in UTC by default and walks back another day when the imagery is not ready yet. Requests use a square canvas, and the API renders the world map across just 26.17%-69.92% of the canvas height (the band is always 7/16 tall — calibrated pixel by pixel against the GIBS coastline layer). Cropping exactly that band is what keeps the clouds latitudinally aligned with the Earth texture; the base map then steps up 2048 -> 4096 -> 6144 so the picture lights up early and sharpens in the background (8192 comes back solid black — that is the server-side ceiling). That ladder is independent of the quality preset, so a quality downgrade never costs cloud sharpness.
 - **City weather**: Open-Meteo (`api.open-meteo.com`, CORS `*`, no key). The 102 cities go out as 3 concurrent batches of up to 40 coordinates each.
 
 Refresh the data (needs network access):
@@ -131,7 +131,7 @@ Implementation notes:
 ## Limitations
 
 - TLE data ages: positions drift as the snapshot gets older; the page does not fetch updates at runtime.
-- The cloud layer is a **daily** global mosaic, not a live feed, and it only covers the daylit hemisphere (there is no free global real-time cloud product to use instead — see "Weather mode" above). The cloud extraction is a heuristic on true-colour pixels, so very bright desert or snow can occasionally pass for thin cloud.
+- The cloud layer is a **daily** global mosaic, not a live feed, and it only covers the daylit hemisphere (there is no free global real-time cloud product to use instead — see "Weather mode" above). The cloud extraction is a heuristic on true-colour pixels: the saturation test is what separates cloud from bright desert (Sahara pixels sit around 0.31 saturation and are driven fully transparent), but snow and extreme dust can still survive as a thin haze. Cloud resolution tops out at 6144 px (~17 pixels per degree) — zooming past province scale still goes soft, which is the ceiling of a free data source.
 - The footprint is a circular approximation — no off-nadir steering, scan strips or real sensor swath.
 - City highlighting has two tiers: gold pulse means the city is inside the geometric coverage circle (widened 1.6x so edge cities do not flicker), while the warm afterglow marks cities the widened "sweep circle" has just passed. That sweep circle has a floor of 8 degrees (about 890 km), otherwise a narrow-swath satellite such as Landsat (15 degrees) would barely touch a handful of cities per day. The afterglow lasts 150 seconds of simulated time, so it stays readable while fast-forwarding. Only 102 cities are built in, so small towns are missed when the decision radius and city density do not line up.
 - Texture resolution is finite (8192x4096 from NASA imagery), so the ground still softens at ground-hugging zoom; run `npm run fetch:textures` (or drop in your own files) to replace the two images in `public/textures/` — the fetch script pulls the 21600x10800 NASA master, which is much larger than the downscaled copy shipped in the repo.

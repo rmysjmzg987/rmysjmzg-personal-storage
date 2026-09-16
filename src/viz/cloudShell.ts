@@ -15,9 +15,13 @@ const VERTEX = [
 ].join('\n');
 
 /**
- * 云图是"真彩卫星影像"：云又白又中性，海洋很暗，沙漠/植被偏黄绿。
- * 这里用「亮度高 + 饱和度低 + 黄调弱」三条规则把云提取成 alpha，其余像素透明，
+ * 云图是"真彩卫星影像"：云又白又中性，海洋很暗，沙漠/植被偏黄。这里用
+ * 「亮度高 + 饱和度低 + 黄调弱」三条规则把云提取成 alpha，其余像素透明，
  * 于是球壳看起来就是一层悬浮的云，而不是一张贴纸。
+ *
+ * 三条判据的过渡段都放得比较宽，云的边缘才是渐隐的；其中饱和度那一条是分辨
+ * 「云」和「亮沙漠」的关键——撒哈拉那种 (0.73, 0.63, 0.50) 的像素饱和度约 0.31，
+ * 必须在这一档被彻底压掉，否则沙漠会整块糊成白云。
  */
 const FRAGMENT = [
   'uniform sampler2D cloudMap;',
@@ -48,7 +52,9 @@ const FRAGMENT = [
   '  float day = smoothstep(-0.12, 0.22, dot(n, sun));',
   '  float lambert = clamp(dot(n, sun), 0.0, 1.0);',
   '  float shade = 0.66 + 0.34 * lambert;',
-  '  vec3 color = mix(vec3(0.78, 0.84, 0.95), vec3(1.0), clamp(alpha * 1.4, 0.0, 1.0)) * shade;',
+  '  // 云的颜色直接用影像本身的颜色（提亮 + 提白一点）：云顶亮、云隙灰、薄云透蓝的层次都能留下，',
+  '  // 比统一刷成纯白更像云',
+  '  vec3 color = mix(clamp(c * 1.32 + 0.05, 0.0, 1.0), vec3(1.0), 0.34) * shade;',
   '  gl_FragColor = vec4(color, alpha * hasCloud * opacity * day);',
   '}',
 ].join('\n');
@@ -82,12 +88,12 @@ export function createCloudShell(options: CloudShellOptions = {}): CloudShellHan
     hasCloud: { value: 0 },
     sunDir: { value: new THREE.Vector3(1, 0, 0) },
     opacity: { value: 0.92 },
-    lumLow: { value: 0.4 },
-    lumHigh: { value: 0.64 },
-    satLow: { value: 0.12 },
-    satHigh: { value: 0.3 },
-    yellowLow: { value: 0.05 },
-    yellowHigh: { value: 0.16 },
+    lumLow: { value: 0.34 },
+    lumHigh: { value: 0.68 },
+    satLow: { value: 0.10 },
+    satHigh: { value: 0.30 },
+    yellowLow: { value: 0.04 },
+    yellowHigh: { value: 0.22 },
   };
 
   const material = new THREE.ShaderMaterial({
@@ -121,7 +127,8 @@ export function createCloudShell(options: CloudShellOptions = {}): CloudShellHan
       disposeTexture();
       if (!canvas) return;
       const next = new THREE.CanvasTexture(canvas);
-      next.anisotropy = Math.max(1, options.maxAnisotropy ?? 8);
+      // 各向异性拉满：云壳是球面，越靠边缘采样越斜，这个值直接决定贴脸时糊不糊
+      next.anisotropy = Math.max(1, options.maxAnisotropy ?? 16);
       next.generateMipmaps = true;
       next.minFilter = THREE.LinearMipmapLinearFilter;
       next.magFilter = THREE.LinearFilter;
@@ -151,4 +158,3 @@ export function createCloudShell(options: CloudShellOptions = {}): CloudShellHan
     },
   };
 }
-
