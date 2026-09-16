@@ -5,7 +5,7 @@ type Dict = Record<string, string | ((params: Record<string, string | number>) =
 const ZH: Dict = {
   title: '卫星轨道可视化',
   subtitle: '真实 TLE · 按本机时间推算位置',
-  snapshot: (p) => `数据快照：${p.date} · 位置按本机时间实时计算`,
+  snapshot: (p) => `数据快照：${p.date} · 位置按本机时间实时计算 · v${p.version}`,
   source: (p) => `TLE 来源：${p.source}`,
   paused: '已暂停',
   resume: '继续',
@@ -107,12 +107,38 @@ const ZH: Dict = {
   toastExported: '已导出卫星清单',
   customDesc: (p) => `用户自定义卫星 · 近地点 ${p.altitude} km`,
   customDescTle: '用户粘贴 TLE 的自定义卫星',
+  modeOrbit: '卫星轨道',
+  modeWeather: '气象云图',
+  modeHint: '在卫星轨道与气象云图之间切换（快捷键 M）',
+  weatherSats: '气象卫星',
+  weatherSatsHint: '显示专业气象卫星：静止轨道（GOES / 向日葵 / 风云四号 / Meteosat）与极轨（风云三号 / NOAA-20/21）',
+  weatherRefresh: '刷新数据',
+  weatherLoading: '正在获取云图…',
+  weatherCloudTime: (p) => `云图时间 ${p.date}`,
+  weatherFailed: '数据获取失败，点「刷新数据」重试',
+  weatherSource: '云图：NASA VIIRS（NOAA-20，每日更新）· 天气：Open-Meteo 实时',
+  weatherUpdated: (p) => `天气更新于 ${p.time}`,
+  weatherTip: (p) => `${p.cond} · ${p.temp}°C · 风 ${p.wind} km/h · 降水 ${p.precip} mm`,
+  weatherStats: (p) => `云图 ${p.date} · 气象卫星 ${p.count}`,
+  wmoClear: '晴',
+  wmoMainlyClear: '晴间多云',
+  wmoPartly: '多云',
+  wmoOvercast: '阴',
+  wmoCloudy: '多云',
+  wmoFog: '雾',
+  wmoDrizzle: '毛毛雨',
+  wmoRain: '雨',
+  wmoFreezingRain: '冻雨',
+  wmoShowers: '阵雨',
+  wmoSnow: '雪',
+  wmoSnowShowers: '阵雪',
+  wmoThunder: '雷暴',
 };
 
 const EN: Dict = {
   title: 'Satellite Orbit Viewer',
   subtitle: 'Real TLE · positions from local time',
-  snapshot: (p) => `Data snapshot: ${p.date} · positions computed from local device time`,
+  snapshot: (p) => `Data snapshot: ${p.date} · positions computed from local device time · v${p.version}`,
   source: (p) => `TLE source: ${p.source}`,
   paused: 'Paused',
   resume: 'Resume',
@@ -214,6 +240,32 @@ const EN: Dict = {
   toastExported: 'Satellite list exported',
   customDesc: (p) => `User-defined satellite · perigee ${p.altitude} km`,
   customDescTle: 'Custom satellite from a pasted TLE',
+  modeOrbit: 'Orbits',
+  modeWeather: 'Clouds',
+  modeHint: 'Switch between orbit and weather views (shortcut M)',
+  weatherSats: 'Weather sats',
+  weatherSatsHint: 'Show the operational weather fleet: geostationary (GOES / Himawari / Fengyun-4 / Meteosat) and polar (Fengyun-3 / NOAA-20/21)',
+  weatherRefresh: 'Refresh',
+  weatherLoading: 'Loading cloud imagery…',
+  weatherCloudTime: (p) => `Imagery ${p.date}`,
+  weatherFailed: 'Data unavailable — press Refresh to retry',
+  weatherSource: 'Imagery: NASA VIIRS (NOAA-20, daily) · Weather: Open-Meteo live',
+  weatherUpdated: (p) => `Weather updated ${p.time}`,
+  weatherTip: (p) => `${p.cond} · ${p.temp}°C · wind ${p.wind} km/h · precip ${p.precip} mm`,
+  weatherStats: (p) => `Imagery ${p.date} · Weather sats ${p.count}`,
+  wmoClear: 'Clear',
+  wmoMainlyClear: 'Mainly clear',
+  wmoPartly: 'Partly cloudy',
+  wmoOvercast: 'Overcast',
+  wmoCloudy: 'Cloudy',
+  wmoFog: 'Fog',
+  wmoDrizzle: 'Drizzle',
+  wmoRain: 'Rain',
+  wmoFreezingRain: 'Freezing rain',
+  wmoShowers: 'Showers',
+  wmoSnow: 'Snow',
+  wmoSnowShowers: 'Snow showers',
+  wmoThunder: 'Thunderstorm',
 };
 
 const DICTS: Record<Lang, Dict> = { zh: ZH, en: EN };
@@ -221,4 +273,13 @@ const DICTS: Record<Lang, Dict> = { zh: ZH, en: EN };
 export function t(lang: Lang, key: string, params: Record<string, string | number> = {}): string {
   const entry = DICTS[lang][key] ?? DICTS.zh[key] ?? key;
   return typeof entry === 'function' ? entry(params) : entry;
+}
+
+/** 字典里出现过的全部 key（中英合集），用于校验两种语言是否同步 */
+export function dictKeys(): string[] {
+  return [...new Set([...Object.keys(DICTS.zh), ...Object.keys(DICTS.en)])];
+}
+
+export function hasKey(lang: Lang, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(DICTS[lang], key);
 }

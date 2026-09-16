@@ -1,12 +1,16 @@
 /// <reference types="vitest/config" />
+import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 
 const root = dirname(fileURLToPath(import.meta.url));
+// 版本号只在 package.json 里维护一份，页脚显示的就是它
+const { version } = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as { version: string };
 
 export default defineConfig({
   base: './',
+  define: { __APP_VERSION__: JSON.stringify(version) },
   build: { target: 'es2022', chunkSizeWarningLimit: 1500 },
   resolve: {
     alias: [

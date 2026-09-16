@@ -10,7 +10,8 @@ describe('i18n', () => {
   it('interpolates parameters', () => {
     expect(t('zh', 'satellites', { count: 76 })).toContain('76');
     expect(t('en', 'following', { name: 'ISS' })).toContain('ISS');
-    expect(t('zh', 'snapshot', { date: '2026-09-16' })).toContain('2026-09-16');
+    expect(t('zh', 'snapshot', { date: '2026-09-16', version: '0.4.0' })).toContain('2026-09-16');
+    expect(t('zh', 'snapshot', { date: '2026-09-16', version: '0.4.0' })).toContain('v0.4.0');
   });
 
   it('falls back to the key when missing', () => {

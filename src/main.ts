@@ -48,9 +48,32 @@ import { mountHud, type HudState, type LayerKey } from './ui/hud';
 import { mountDetail, type DetailView } from './ui/detail';
 import { mountSearchBar } from './ui/searchBar';
 import { t, type Lang } from './ui/i18n';
+import { createCloudShell } from './viz/cloudShell';
+import { CLOUD_WIDTH, loadCloudSnapshot } from './weather/clouds';
+import {
+  WEATHER_STALE_MS,
+  fetchCityWeather,
+  type CityWeather,
+  type WeatherLocation,
+} from './weather/forecast';
+import { weatherConditionKey } from './weather/icons';
+import { pickMeteoSatellites } from './orbit/meteo';
 
 const FALLBACK_SNAPSHOT = '2026-09-16';
 const HEO_PERIGEE = 0.25;
+
+/** 卫星轨道 / 气象云图两种模式 */
+type AppMode = 'orbit' | 'weather';
+type WeatherStatus = 'idle' | 'loading' | 'ready' | 'error';
+
+/** 毫秒时间戳 → 本机时间 HH:MM */
+function formatClock(ms: number): string {
+  return new Date(ms).toLocaleTimeString('zh-CN', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
 
 function formatDegrees(value: number, positive: string, negative: string): string {
   const hemisphere = value >= 0 ? positive : negative;
@@ -119,6 +142,13 @@ async function bootstrap(): Promise<void> {
   const footprint = createFootprint();
   ctx.scene.add(footprint.group);
 
+  // 云壳挂在地球组里：跟着 GMST 一起自转，不用额外做坐标变换
+  const cloudShell = createCloudShell({
+    segments: settings.segments,
+    maxAnisotropy: ctx.renderer.capabilities.getMaxAnisotropy(),
+  });
+  earth.group.add(cloudShell.mesh);
+
   // ---- 状态 ----
   const state = {
     lang: 'zh' as Lang,
@@ -126,8 +156,13 @@ async function bootstrap(): Promise<void> {
     hoveredId: null as string | null,
     locked: false,
     layers: { footprint: true, graticule: true, orbits: true } as Record<LayerKey, boolean>,
-    snapshotDate: FALLBACK_SNAPSHOT,
-    sourceLabel: 'CelesTrak',
+      snapshotDate: FALLBACK_SNAPSHOT,
+      sourceLabel: 'CelesTrak',
+    mode: 'orbit' as AppMode,
+    meteoOnly: false,
+    weatherStatus: 'idle' as WeatherStatus,
+    cloudDate: null as string | null,
+    weatherUpdatedAt: null as number | null,
     fps: 0,
   };
 
@@ -137,6 +172,10 @@ async function bootstrap(): Promise<void> {
   let customStore: CustomStoreData = readStore();
   let cityLabels: CityLabelHandle | null = null;
   let cityUnits: { key: string; unit: { x: number; y: number; z: number } }[] = [];
+  let weatherLocations: WeatherLocation[] = [];
+  let weather: Map<string, CityWeather> | null = null;
+  let cloudBusy = false;
+  let weatherBusy = false;
   const coveredCities = new Set<string>();
   const sweepMemory = createSweepMemory();
   const sweptScratch: string[] = [];
@@ -454,6 +493,7 @@ async function bootstrap(): Promise<void> {
       rate: clock.rate(),
       fps: state.fps,
       snapshotDate: state.snapshotDate,
+      version: __APP_VERSION__,
       quality,
       lang: state.lang,
       satelliteCount: records.length,
@@ -461,6 +501,13 @@ async function bootstrap(): Promise<void> {
       sourceLabel: state.sourceLabel,
       layers: { ...state.layers },
       selectedName: state.selectedId ? displayName(selectedRecord()!, state.lang) : null,
+      mode: state.mode,
+      meteoOnly: state.meteoOnly,
+      weatherStatus: state.weatherStatus,
+      weatherNote: weatherNoteText(),
+      weatherSource: t(state.lang, 'weatherSource'),
+      weatherCloudDate: state.cloudDate ?? '',
+      meteoSatelliteCount: meteoSatelliteRecords().length,
     }),
     {
       onTogglePlay: () => clock.setPlaying(!clock.isPlaying()),
@@ -488,14 +535,148 @@ async function bootstrap(): Promise<void> {
       onAddSatellite: () => {
         addSatellite.open();
       },
+      onMode: (mode) => setMode(mode),
+      onToggleMeteo: () => {
+        state.meteoOnly = !state.meteoOnly;
+        applyMode();
+        hud.refresh();
+      },
+      onRefreshWeather: () => {
+        void loadClouds(true);
+        void loadWeather(true);
+      },
     },
   );
+
+  // ---- 模式切换：卫星轨道 / 气象云图 ----
+  let orbitClockState = { playing: true, rate: 60 };
+
+  function weatherNoteText(): string {
+    if (!state.cloudDate) return '';
+    const parts = [t(state.lang, 'weatherCloudTime', { date: state.cloudDate })];
+    if (state.weatherUpdatedAt) {
+      parts.push(t(state.lang, 'weatherUpdated', { time: formatClock(state.weatherUpdatedAt) }));
+    }
+    return parts.join(' · ');
+  }
+
+  function meteoSatelliteRecords(): SatelliteRecord[] {
+    return pickMeteoSatellites(data?.records ?? []);
+  }
+
+  /** 按模式切换场景内容：气象模式里卫星相关内容整体让位给云壳 */
+  function applyMode(): void {
+    const weatherMode = state.mode === 'weather';
+    if (satelliteScene) {
+      if (weatherMode) {
+        satelliteScene.setRecords(state.meteoOnly ? meteoSatelliteRecords() : []);
+        satelliteScene.group.visible = state.meteoOnly;
+        satelliteScene.setOrbitLinesVisible(state.meteoOnly);
+        satelliteScene.setHovered(null);
+        satelliteScene.setHoveredOrbit(null);
+      } else {
+        satelliteScene.setRecords(records);
+        satelliteScene.group.visible = true;
+        satelliteScene.setOrbitLinesVisible(state.layers.orbits);
+      }
+    }
+    footprint.setVisible(false);
+    cloudShell.setVisible(weatherMode && cloudShell.hasTexture());
+    graticule.visible = state.layers.graticule;
+    searchBar.setVisible(!weatherMode);
+    tooltip.hidden = true;
+    if (weatherMode) addSatellite.close();
+  }
+
+  function setMode(mode: AppMode): void {
+    if (state.mode === mode) return;
+    if (mode === 'weather') {
+      // 云图与天气都是"此刻"的数据，切过去就把模拟时钟停在现在（退出时再还原）
+      orbitClockState = { playing: clock.isPlaying(), rate: clock.rate() };
+      clock.setRate(1);
+      clock.setPlaying(false);
+      clock.resetToNow();
+      clearSelection();
+      state.weatherStatus = cloudShell.hasTexture() ? 'ready' : 'idle';
+    } else {
+      clock.setRate(orbitClockState.rate);
+      clock.setPlaying(orbitClockState.playing);
+      state.weatherStatus = cloudShell.hasTexture() ? 'ready' : 'idle';
+    }
+    state.mode = mode;
+    applyMode();
+    if (mode === 'weather') {
+      void loadClouds();
+      void loadWeather();
+    }
+    hud.refresh();
+  }
+
+  async function loadClouds(force = false): Promise<void> {
+    if (cloudBusy) return;
+    if (!force && cloudShell.hasTexture()) return;
+    cloudBusy = true;
+    state.weatherStatus = 'loading';
+    hud.refresh();
+    try {
+      const snapshot = await loadCloudSnapshot({ width: CLOUD_WIDTH[quality] });
+      cloudShell.setTexture(snapshot.canvas);
+      state.cloudDate = snapshot.date;
+      state.weatherStatus = 'ready';
+    } catch (error) {
+      console.warn('[weather] cloud imagery unavailable', error);
+      state.weatherStatus = 'error';
+    } finally {
+      cloudBusy = false;
+      applyMode();
+      hud.refresh();
+    }
+  }
+
+  async function loadWeather(force = false): Promise<void> {
+    if (weatherBusy || weatherLocations.length === 0) return;
+    const stale = weather === null || Date.now() - (state.weatherUpdatedAt ?? 0) > WEATHER_STALE_MS;
+    if (!force && !stale) return;
+    weatherBusy = true;
+    try {
+      const bundle = await fetchCityWeather(weatherLocations);
+      weather = bundle.byKey;
+      state.weatherUpdatedAt = bundle.updatedAt;
+      if (state.cloudDate && state.weatherStatus !== 'loading') state.weatherStatus = 'ready';
+    } catch (error) {
+      console.warn('[weather] city forecast unavailable', error);
+      if (weather === null && state.weatherStatus !== 'loading') state.weatherStatus = 'error';
+    } finally {
+      weatherBusy = false;
+      hud.refresh();
+    }
+  }
+
+  /** 城市名右侧天气图标的悬停详情 */
+  function showWeatherTip(key: string, x: number, y: number): void {
+    const item = weather?.get(key);
+    const city = data?.cities.find((entry) => cityKey(entry) === key);
+    if (!item || !city) return;
+    const numeric = (value: number, digits: number) =>
+      Number.isFinite(value) ? value.toFixed(digits) : '—';
+    tooltip.hidden = false;
+    tooltip.innerHTML = '<span class="name"></span><span class="meta"></span>';
+    tooltip.querySelector<HTMLElement>('.name')!.textContent = state.lang === 'zh' ? city.zh : city.en;
+    tooltip.querySelector<HTMLElement>('.meta')!.textContent = t(state.lang, 'weatherTip', {
+      cond: t(state.lang, weatherConditionKey(item.code)),
+      temp: numeric(item.tempC, 1),
+      wind: numeric(item.windKmh, 0),
+      precip: numeric(item.precipMm, 1),
+    });
+    tooltip.style.left = `${x}px`;
+    tooltip.style.top = `${y}px`;
+  }
 
   // ---- 交互 ----
   const pointer = { x: 0, y: 0, downX: 0, downY: 0, down: false, moved: false, button: 0 };
 
   function updateHover(): void {
-    if (!satelliteScene) return;
+    if (!satelliteScene || state.mode === 'weather') return;
     // 先找卫星点，找不到再找轨道线：高轨道卫星点太小，靠线条也能选
     const pointId = satelliteScene.pick(pointer.x, pointer.y, 24);
     const id = pointId ?? satelliteScene.pickOrbit(pointer.x, pointer.y, 10);
@@ -572,6 +753,7 @@ async function bootstrap(): Promise<void> {
     pointer.down = false;
     follow.setDragging(false);
     if (!wasDown || pointer.moved || !satelliteScene) return;
+    if (state.mode === 'weather') return;
     if (event.button !== 0) return;
     // 卫星点优先；点不到点上时退化为点击轨道线（高轨/远端卫星点非常小）
     const id =
@@ -586,6 +768,10 @@ async function bootstrap(): Promise<void> {
   });
   window.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') clearSelection();
+    // M：在卫星轨道与气象云图之间切换
+    if (event.key === 'm' || event.key === 'M') {
+      setMode(state.mode === 'weather' ? 'orbit' : 'weather');
+    }
     // V：在俯视 / 正视取景之间切换（仅锁定时有效）
     if ((event.key === 'v' || event.key === 'V') && state.locked) {
       follow.toggleViewMode();
@@ -607,7 +793,12 @@ async function bootstrap(): Promise<void> {
     records = rebuildRecords();
     satelliteScene = createSatelliteScene(records);
     ctx.scene.add(satelliteScene.group);
-    cityLabels = createCityLabels(hudRoot, data.cities);
+    cityLabels = createCityLabels(hudRoot, data.cities, {
+      onWeatherHover: (key, x, y) => showWeatherTip(key, x, y),
+      onWeatherLeave: () => {
+        tooltip.hidden = true;
+      },
+    });
     cityUnits = data.cities.map((city) => {
       const ecef = geodeticToEcef(city.lat, city.lon, 0);
       const length = Math.hypot(ecef.x, ecef.y, ecef.z) || 1;
@@ -616,6 +807,11 @@ async function bootstrap(): Promise<void> {
         unit: { x: ecef.x / length, y: ecef.y / length, z: ecef.z / length },
       };
     });
+    weatherLocations = data.cities.map((city) => ({
+      key: cityKey(city),
+      lat: city.lat,
+      lon: city.lon,
+    }));
     resize();
     hud.refresh();
     const lockParam = new URLSearchParams(window.location.search).get('lock');
@@ -625,6 +821,8 @@ async function bootstrap(): Promise<void> {
       );
       if (target) lockOn(target);
     }
+    // ?mode=weather 直接进气象模式（便于分享与调试）
+    if (new URLSearchParams(window.location.search).get('mode') === 'weather') setMode('weather');
   } catch (error) {
     console.error(error);
     showToast(t(state.lang, 'error'));
@@ -645,18 +843,22 @@ async function bootstrap(): Promise<void> {
 
     const simTime = clock.now();
     const gmstRad = gmstRadians(julianDate(simTime));
-    earth.update({
-      gmstRad,
-      sunDirEci: sunDirectionEci(simTime),
-      atmosphere: settings.atmosphere,
-    });
+    const sunDirEci = sunDirectionEci(simTime);
+    const weatherMode = state.mode === 'weather';
+    earth.update({ gmstRad, sunDirEci, atmosphere: settings.atmosphere });
+    cloudShell.setSunDirection(sunDirEci);
 
-    if (satelliteScene) {
+    // 卫星场景每帧都要更新位置：气象模式下开了"气象卫星"同样要刷新，
+    // 否则那几颗卫星会停在切换那一刻的位置上
+    if (satelliteScene && (!weatherMode || state.meteoOnly)) {
       // 点尺寸随视场角变化（锁定时会收缩 FOV），每帧按当前相机参数换算
       satelliteScene.setPointScale(
         window.innerHeight / (2 * Math.tan((ctx.camera.fov * Math.PI) / 360)),
       );
       satelliteScene.update(simTime, ctx.camera, window.innerWidth, window.innerHeight, dt);
+    }
+
+    if (satelliteScene && !weatherMode) {
       const selected = selectedRecord();
       if (state.locked && selected) {
         const position = satelliteScene.positionOf(selected.id);
@@ -706,19 +908,26 @@ async function bootstrap(): Promise<void> {
         sweepMemory.clear();
       }
 
-      cityLabels?.update({
-        camera: ctx.camera,
-        width: window.innerWidth,
-        height: window.innerHeight,
-        gmstRad,
-        lang: state.lang,
-        covered: coveredCities,
-        swept: sweptCities,
-        footprintActive: footprint.group.visible,
-      });
-
       if (!pointer.down) updateHover();
+    } else if (weatherMode) {
+      // 气象模式：卫星侧整体让位，云壳的显隐由 applyMode / loadClouds 控制
+      footprint.setVisible(false);
+      coveredCities.clear();
+      sweepMemory.clear();
+      sweptCities = emptySwept;
     }
+
+    cityLabels?.update({
+      camera: ctx.camera,
+      width: window.innerWidth,
+      height: window.innerHeight,
+      gmstRad,
+      lang: state.lang,
+      covered: coveredCities,
+      swept: sweptCities,
+      footprintActive: !weatherMode && footprint.group.visible,
+      weather: weatherMode ? weather : null,
+    });
 
     // 星空当作无限远的背景：跟着相机走，缩放到任何距离都不会被"缩掉"或穿帮
     starfield.position.copy(ctx.camera.position);
@@ -740,6 +949,9 @@ async function bootstrap(): Promise<void> {
       const cameraRadius = ctx.camera.position.length();
       const target = ctx.camera.position.distanceTo(ctx.controls.target);
       debugEl.textContent = [
+        `mode=${state.mode}${weatherMode && state.meteoOnly ? '+meteo' : ''}`,
+        `cloud=${state.cloudDate ?? '—'} status=${state.weatherStatus}`,
+        `weather cities=${weather ? weather.size : 0}`,
         `cam r=${cameraRadius.toFixed(0)} km`,
         `dist=${target.toFixed(0)} km`,
         `target r=${ctx.controls.target.length().toFixed(0)} km`,

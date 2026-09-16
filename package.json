@@ -1,7 +1,7 @@
 {
   "name": "satellite-orbit-viewer",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.4.0",
   "type": "module",
   "description": "Interactive 3D visualization of artificial satellite orbits",
   "license": "MIT",

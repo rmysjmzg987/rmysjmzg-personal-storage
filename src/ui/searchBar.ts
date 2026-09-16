@@ -13,6 +13,8 @@ export interface SearchBarHandle {
   refresh(): void;
   /** 语言或数据变化后重绘 */
   isOpen(): boolean;
+  /** 气象模式下整条搜索栏隐藏（含 "/" 快捷键） */
+  setVisible(visible: boolean): void;
 }
 
 const MAX_RESULTS = 40;
@@ -208,6 +210,7 @@ export function mountSearchBar(root: HTMLElement, callbacks: SearchBarCallbacks)
   // 按 “/” 直接聚焦搜索框（不在输入框里时才触发）
   document.addEventListener('keydown', (event) => {
     if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
+    if (dock.hidden) return;
     const target = event.target as HTMLElement | null;
     const tag = target?.tagName ?? '';
     if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return;
@@ -221,5 +224,16 @@ export function mountSearchBar(root: HTMLElement, callbacks: SearchBarCallbacks)
   };
   refresh();
 
-  return { refresh, isOpen: () => open };
+  return {
+    refresh,
+    isOpen: () => open,
+    setVisible(visible) {
+      dock.hidden = !visible;
+      if (!visible) {
+        input.value = '';
+        close();
+        input.blur();
+      }
+    },
+  };
 }

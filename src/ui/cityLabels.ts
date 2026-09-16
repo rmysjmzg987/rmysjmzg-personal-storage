@@ -3,6 +3,8 @@ import { EARTH_RADIUS_KM, geodeticToEcef, rotateZ } from '../core/frames';
 import { isOccludedByEarth, projectSample } from '../viz/picking';
 import type { CityInfo } from '../orbit/catalog';
 import type { Lang } from './i18n';
+import type { CityWeather } from '../weather/forecast';
+import { weatherIconKey, weatherIconSvg, type WeatherIconKey } from '../weather/icons';
 
 /** 覆盖圈判定放宽系数：真正落在拍摄范围内的城市，判定圈比几何覆盖圈略大一点 */
 export const CITY_HIGHLIGHT_MARGIN = 1.6;
@@ -69,6 +71,8 @@ export interface CityLabelView {
   swept: Set<string>;
   /** 是否处于"拍摄范围正在显示"的状态 */
   footprintActive: boolean;
+  /** 气象模式下的城市天气；非气象模式传 null（城市名右侧的天气图标） */
+  weather: Map<string, CityWeather> | null;
 }
 
 export interface CityLabelHandle {
@@ -85,13 +89,25 @@ interface CityEntry {
   lastCovered: boolean;
   lastSwept: boolean;
   lastName: string;
+  weatherElement: HTMLSpanElement;
+  lastWeatherIcon: WeatherIconKey | null;
 }
 
 export function cityKey(city: CityInfo): string {
   return city.en;
 }
 
-export function createCityLabels(root: HTMLElement, cities: CityInfo[]): CityLabelHandle {
+export interface CityLabelOptions {
+  /** 悬停城市天气图标：坐标用于把提示气泡放到图标旁边 */
+  onWeatherHover?(key: string, x: number, y: number): void;
+  onWeatherLeave?(): void;
+}
+
+export function createCityLabels(
+  root: HTMLElement,
+  cities: CityInfo[],
+  options: CityLabelOptions = {},
+): CityLabelHandle {
   const container = document.createElement('div');
   container.className = 'city-layer';
   root.appendChild(container);
@@ -103,7 +119,14 @@ export function createCityLabels(root: HTMLElement, cities: CityInfo[]): CityLab
     dot.className = 'city-dot';
     const nameElement = document.createElement('span');
     nameElement.className = 'city-name';
-    element.append(dot, nameElement);
+    const weatherElement = document.createElement('span');
+    weatherElement.className = 'city-weather';
+    weatherElement.hidden = true;
+    weatherElement.addEventListener('pointerenter', (event) => {
+      options.onWeatherHover?.(cityKey(city), event.clientX, event.clientY);
+    });
+    weatherElement.addEventListener('pointerleave', () => options.onWeatherLeave?.());
+    element.append(dot, nameElement, weatherElement);
     container.appendChild(element);
     const ecef = geodeticToEcef(city.lat, city.lon, 0);
     const length = Math.hypot(ecef.x, ecef.y, ecef.z) || 1;
@@ -116,13 +139,15 @@ export function createCityLabels(root: HTMLElement, cities: CityInfo[]): CityLab
       lastCovered: false,
       lastSwept: false,
       lastName: '',
+      weatherElement,
+      lastWeatherIcon: null,
     };
   });
 
   const surface = EARTH_RADIUS_KM * 1.002;
 
   return {
-    update({ camera, width, height, gmstRad, lang, covered, swept, footprintActive }) {
+    update({ camera, width, height, gmstRad, lang, covered, swept, footprintActive, weather }) {
       for (const entry of entries) {
         const raw = {
           x: entry.ecefUnit.x * surface,
@@ -154,6 +179,18 @@ export function createCityLabels(root: HTMLElement, cities: CityInfo[]): CityLab
         if (name !== entry.lastName) {
           entry.nameElement.textContent = name;
           entry.lastName = name;
+        }
+        const cityWeather = weather?.get(entry.key) ?? null;
+        if (cityWeather) {
+          const icon = weatherIconKey(cityWeather.code, cityWeather.isDay);
+          if (icon !== entry.lastWeatherIcon) {
+            entry.weatherElement.innerHTML = weatherIconSvg(icon);
+            entry.lastWeatherIcon = icon;
+          }
+          if (entry.weatherElement.hidden) entry.weatherElement.hidden = false;
+        } else if (!entry.weatherElement.hidden) {
+          entry.weatherElement.hidden = true;
+          entry.lastWeatherIcon = null;
         }
         const near = sample.depth < 26000;
         const visible = entry.city.rank === 1 || isCovered || isSwept || near;

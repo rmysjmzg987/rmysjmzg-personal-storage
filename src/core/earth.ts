@@ -211,6 +211,8 @@ export async function createEarth(opts: {
       depthWrite: false,
     }),
   );
+  // 云壳（renderOrder 1）必须先于大气辉光绘制，否则"大气在云外"的层次就反了
+  atmosphere.renderOrder = 2;
 
   const group = new THREE.Group();
   group.add(earth, atmosphere);

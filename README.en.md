@@ -4,6 +4,8 @@ A self-contained, front-end-only 3D satellite orbit visualiser. It uses real TLE
 
 > Data accuracy is for demonstration and visualisation only — not for operational use.
 
+Change history lives in [CHANGELOG.md](CHANGELOG.md); the current release is **v0.4**.
+
 ## Highlights
 
 - **Real orbits**: 18 preset satellites covering nine orbit classes — equatorial LEO, polar, Sun-synchronous, low Earth, medium Earth, inclined geosynchronous, geostationary, highly elliptical (Molniya) and retrograde.
@@ -20,6 +22,7 @@ A self-contained, front-end-only 3D satellite orbit visualiser. It uses real TLE
 - **Bilingual UI**: Chinese and English for interface, city names, satellite names and orbit descriptions.
 - **Time control**: ×1 / ×10 / ×60 / ×600 rates, pause and "back to now".
 - **Layer toggles**: sensor view, graticule and orbit lines.
+- **Weather mode (new in v0.4)**: the top bar flips the whole page between "Orbits" and "Clouds" (shortcut `M`, or open `?mode=weather` directly). Weather mode swaps the Earth's surface for a translucent cloud shell built from NASA's daily global true-colour imagery and keeps **only the clouds** — everywhere without cloud is fully transparent — shows a live Open-Meteo weather icon next to every city name (hover for details), and can overlay the 10 main operational weather satellites (GOES / Himawari / Fengyun / Meteosat / NOAA) from the right-hand toolbar.
 
 ## Getting started
 
@@ -78,8 +81,23 @@ npm run fetch:textures # pull the full-resolution NASA textures (optional; a dow
 | "Add satellite" | Open the add-satellite dialog (library / manage / paste TLE / elements) |
 | "Sensor view / Graticule / Orbit lines" | Toggle layers |
 | "EN / 中" | Switch language |
+| Top bar "Orbits / Clouds" | Switch between orbit view and weather mode (shortcut `M`) |
+| Weather mode: hover the weather icon beside a city | Show that city's conditions, temperature, wind speed and rain |
+| Weather mode: "Weather sats" on the right | Overlay the main operational weather satellites on top of the clouds |
+| Weather mode: "Refresh" on the right | Re-fetch the cloud imagery and the city weather |
 
-Debug helpers: append `?lock=25544` (NORAD id) to lock a satellite directly, or `#debug` to show camera diagnostics.
+Debug helpers: append `?lock=25544` (NORAD id) to lock a satellite directly, `?mode=weather` to boot straight into weather mode, or `#debug` to show camera and layer diagnostics.
+
+## Weather mode
+
+The "Clouds" button in the top bar turns the whole page into a weather view that stays completely out of the orbit view's way:
+
+- **Cloud shell**: a sphere at 1.012x the Earth's radius carries NASA's daily global true-colour satellite imagery. A fragment shader keeps only what is bright, desaturated and not too yellow — i.e. clouds — so ocean, desert and vegetation are transparent and just the clouds hang above the globe. The shell sits inside the Earth group, so it rotates with the planet; the imagery is daylight-only, so the night side shows no clouds (consistent with the night-lights side of the globe).
+- **City weather**: all 102 cities are pulled from Open-Meteo in batches, WMO weather codes are mapped to inline SVG icons (clear and partly-cloudy swap the sun for a moon after dark), and hovering an icon opens a bubble with conditions, temperature, wind speed and rain.
+- **Operational weather satellites**: the "Weather sats" toggle on the right overlays only the main operational weather spacecraft (GOES-16/18, Himawari-8/9, Fengyun-4B, Meteosat-12, Fengyun-3D/G, NOAA-20/21). That list is independent of whatever you added or removed in orbit view, so switching back never disturbs your satellite list.
+- **Time semantics**: both the imagery and the weather are "right now" data, so entering weather mode parks the simulation clock on the present. Leaving restores the playback state and time rate you had before.
+
+The honest version of "live": there is no free, key-less, browser-direct (CORS-enabled) **global** real-time cloud image today — geostationary visible-light imagery from GOES and Himawari is daylight-only, goes black at night, and has large coverage gaps over Africa and Europe (we measured it). This page therefore uses NASA's **daily** global true-colour mosaic (VIIRS / NOAA-20 — a wide-swath instrument whose global composite has none of the wedge-shaped orbital seams MODIS shows) and always labels the imagery date on screen. City weather is genuinely live: it loads when you enter the mode, reloads after 30 minutes, and there is a "Refresh" button.
 
 ## Data
 
@@ -87,6 +105,8 @@ Debug helpers: append `?lock=25544` (NORAD id) to lock a satellite directly, or 
 - **Propagation**: SGP4 via [satellite.js](https://github.com/shashwatak/satellite-js), run locally against device time.
 - **Cities**: `public/data/cities.json` (102 cities).
 - **Textures**: NASA Blue Marble topo/bathymetry (day, 8192x4096) and NASA VIIRS 2012 night lights (8192x4096), both equirectangular and registered to the rotation angle and city coordinates. The shader adds distance-attenuated terrain relief lighting and a sea glint, so close-ups look dimensional without turning the whole globe speckled.
+- **Cloud imagery**: NASA GIBS / Worldview Snapshot (`wvs.earthdata.nasa.gov`, CORS `*`, no key, exposes a `Data-Present` header), layer `VIIRS_NOAA20_CorrectedReflectance_TrueColor`. It requests yesterday in UTC by default and walks back another day when the imagery is not ready yet.
+- **City weather**: Open-Meteo (`api.open-meteo.com`, CORS `*`, no key). The 102 cities go out as 3 concurrent batches of up to 40 coordinates each.
 
 Refresh the data (needs network access):
 
@@ -111,6 +131,7 @@ Implementation notes:
 ## Limitations
 
 - TLE data ages: positions drift as the snapshot gets older; the page does not fetch updates at runtime.
+- The cloud layer is a **daily** global mosaic, not a live feed, and it only covers the daylit hemisphere (there is no free global real-time cloud product to use instead — see "Weather mode" above). The cloud extraction is a heuristic on true-colour pixels, so very bright desert or snow can occasionally pass for thin cloud.
 - The footprint is a circular approximation — no off-nadir steering, scan strips or real sensor swath.
 - City highlighting has two tiers: gold pulse means the city is inside the geometric coverage circle (widened 1.6x so edge cities do not flicker), while the warm afterglow marks cities the widened "sweep circle" has just passed. That sweep circle has a floor of 8 degrees (about 890 km), otherwise a narrow-swath satellite such as Landsat (15 degrees) would barely touch a handful of cities per day. The afterglow lasts 150 seconds of simulated time, so it stays readable while fast-forwarding. Only 102 cities are built in, so small towns are missed when the decision radius and city density do not line up.
 - Texture resolution is finite (8192x4096 from NASA imagery), so the ground still softens at ground-hugging zoom; run `npm run fetch:textures` (or drop in your own files) to replace the two images in `public/textures/` — the fetch script pulls the 21600x10800 NASA master, which is much larger than the downscaled copy shipped in the repo.
