@@ -59,11 +59,17 @@ describe('parseStore', () => {
   });
 
   it('round-trips through serialize', () => {
-    const source: CustomStoreData = { version: 1, enabledLibraryIds: [25544], customSatellites: [meta()] };
+    const source: CustomStoreData = {
+      version: 1,
+      enabledLibraryIds: [25544],
+      hiddenPresetIds: [49954],
+      customSatellites: [meta()],
+    };
     const first = parseStore(serializeStore(source));
     expect(first.customSatellites[0].noradId).toBe(90001);
     expect(first.customSatellites[0].label).toBe('MY-SAT');
     expect(first.enabledLibraryIds).toEqual([25544]);
+    expect(first.hiddenPresetIds).toEqual([49954]);
     // 归一化后的形态必须稳定：再存再读不再变化
     expect(parseStore(serializeStore(first))).toEqual(first);
   });
@@ -84,7 +90,12 @@ describe('readStore / writeStore', () => {
       getItem: (key: string) => memory.get(key) ?? null,
       setItem: (key: string, value: string) => void memory.set(key, value),
     };
-    const source: CustomStoreData = { version: 1, enabledLibraryIds: [43613], customSatellites: [meta()] };
+    const source: CustomStoreData = {
+      version: 1,
+      enabledLibraryIds: [43613],
+      hiddenPresetIds: [],
+      customSatellites: [meta()],
+    };
     writeStore(source, storage);
     expect(memory.has(CUSTOM_STORAGE_KEY)).toBe(true);
     const restored = readStore(storage);

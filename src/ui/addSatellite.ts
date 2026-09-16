@@ -15,6 +15,8 @@ export interface AddSatelliteEntry {
   noradId: number;
   name: string;
   secondary: string;
+  /** 额外可搜索的名称（如中英双语原名），用于跨语言匹配 */
+  aliases: string[];
   groupKey: string;
   groupLabel: string;
   kind: 'preset' | 'library' | 'custom';
@@ -29,6 +31,10 @@ export interface AddSatelliteCallbacks {
   nextNoradId(): number;
   onAddCustom(meta: SatelliteMeta): void;
   onToggle(noradId: number): void;
+  /** 恢复为默认显示：只保留预制卫星，清掉库卫星与自定义卫星 */
+  onRestoreDefaults(): void;
+  /** 清空场景里的全部卫星 */
+  onRemoveAll(): void;
   /** 原始 JSON 文本，由调用方解析并提示失败 */
   onImport(rawText: string): void;
   exportData(): CustomStoreData;
@@ -43,7 +49,7 @@ export interface AddSatelliteHandle {
   isOpen(): boolean;
 }
 
-type TabKey = 'library' | 'tle' | 'elements';
+type TabKey = 'library' | 'manage' | 'tle' | 'elements';
 
 const ERROR_KEYS: Record<string, string> = {
   'perigee-too-low': 'errPerigeeTooLow',
@@ -101,6 +107,7 @@ export function mountAddSatellite(root: HTMLElement, callbacks: AddSatelliteCall
   tabBar.className = 'modal-tabs';
   const tabs: { key: TabKey; labelKey: string }[] = [
     { key: 'library', labelKey: 'tabLibrary' },
+    { key: 'manage', labelKey: 'tabManage' },
     { key: 'tle', labelKey: 'tabTle' },
     { key: 'elements', labelKey: 'tabElements' },
   ];
@@ -130,6 +137,28 @@ export function mountAddSatellite(root: HTMLElement, callbacks: AddSatelliteCall
   const libraryList = document.createElement('div');
   libraryList.className = 'library-list';
   libraryPanel.append(searchInput, libraryList);
+
+  // ---- 卫星管理 ----
+  const managePanel = document.createElement('div');
+  managePanel.className = 'modal-panel';
+  managePanel.dataset.panel = 'manage';
+  const manageHint = document.createElement('div');
+  manageHint.className = 'modal-hint';
+  manageHint.dataset.role = 'manage-hint';
+  const manageActions = document.createElement('div');
+  manageActions.className = 'manage-actions';
+  const restoreButton = document.createElement('button');
+  restoreButton.type = 'button';
+  restoreButton.className = 'hud-btn';
+  restoreButton.dataset.role = 'restore';
+  const removeAllButton = document.createElement('button');
+  removeAllButton.type = 'button';
+  removeAllButton.className = 'hud-btn';
+  removeAllButton.dataset.role = 'remove-all';
+  manageActions.append(restoreButton, removeAllButton);
+  const manageList = document.createElement('div');
+  manageList.className = 'library-list manage-list';
+  managePanel.append(manageHint, manageActions, manageList);
 
   // ---- 粘贴 TLE ----
   const tlePanel = document.createElement('div');
@@ -199,7 +228,7 @@ export function mountAddSatellite(root: HTMLElement, callbacks: AddSatelliteCall
   elementStatus.className = 'modal-status';
   elementPanel.append(templateRow, fieldGrid, elementStatus);
 
-  body.append(libraryPanel, tlePanel, elementPanel);
+  body.append(libraryPanel, managePanel, tlePanel, elementPanel);
 
   // ---- 底部操作 ----
   const foot = document.createElement('div');
@@ -240,6 +269,9 @@ export function mountAddSatellite(root: HTMLElement, callbacks: AddSatelliteCall
 
   let activeTab: TabKey = 'library';
   let open = false;
+  /** 「全部移除」的二次确认状态 */
+  let removeAllArmed = false;
+  let armTimer: number | undefined;
 
   function lang(): Lang {
     return callbacks.lang();
@@ -248,13 +280,14 @@ export function mountAddSatellite(root: HTMLElement, callbacks: AddSatelliteCall
   function setTab(tab: TabKey): void {
     activeTab = tab;
     for (const [key, button] of tabButtons) button.classList.toggle('is-active', key === tab);
-    for (const section of [libraryPanel, tlePanel, elementPanel]) {
+    for (const section of [libraryPanel, managePanel, tlePanel, elementPanel]) {
       section.classList.toggle('is-active', section.dataset.panel === tab);
     }
-    const editable = tab !== 'library';
+    const editable = tab === 'tle' || tab === 'elements';
     fovWrap.hidden = !editable;
     submitButton.hidden = !editable;
     if (tab === 'library') renderLibrary();
+    if (tab === 'manage') renderManage();
   }
 
   function renderText(): void {
@@ -395,19 +428,71 @@ export function mountAddSatellite(root: HTMLElement, callbacks: AddSatelliteCall
       const action = document.createElement('button');
       action.type = 'button';
       action.className = 'hud-btn library-btn';
-      if (entry.kind === 'preset') {
-        action.textContent = t(language, 'libShown');
-        action.disabled = true;
-      } else {
-        action.textContent = t(language, entry.active ? 'libRemove' : 'libAdd');
-        action.classList.toggle('is-active', entry.active);
-        action.addEventListener('click', () => {
-          callbacks.onToggle(entry.noradId);
-          renderLibrary();
-        });
-      }
+      action.textContent = t(language, entry.active ? 'libRemove' : 'libAdd');
+      action.classList.toggle('is-active', entry.active);
+      action.addEventListener('click', () => {
+        callbacks.onToggle(entry.noradId);
+        renderLibrary();
+        if (open && activeTab === 'manage') renderManage();
+      });
       item.append(info, action);
       libraryList.appendChild(item);
+    }
+  }
+
+  /** 管理页：列出场景中当前显示的卫星，逐个移除或一键恢复/清空 */
+  function renderManage(): void {
+    const language = lang();
+    manageHint.textContent = t(language, 'manageHint');
+    restoreButton.textContent = t(language, 'manageRestore');
+    removeAllButton.textContent = t(language, removeAllArmed ? 'manageRemoveAllConfirm' : 'manageRemoveAll');
+    removeAllButton.classList.toggle('is-armed', removeAllArmed);
+    manageList.textContent = '';
+
+    const active = callbacks.entries().filter((entry) => entry.active);
+    if (active.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'library-empty';
+      empty.textContent = t(language, 'manageEmpty');
+      manageList.appendChild(empty);
+      return;
+    }
+
+    for (const entry of active) {
+      const item = document.createElement('div');
+      item.className = 'library-item is-active';
+      item.dataset.kind = entry.kind;
+      const info = document.createElement('div');
+      info.className = 'library-info';
+      const nameRow = document.createElement('div');
+      nameRow.className = 'library-name';
+      nameRow.appendChild(document.createTextNode(entry.name));
+      const badge = document.createElement('span');
+      badge.className = 'library-badge';
+      badge.textContent = t(
+        language,
+        entry.kind === 'preset' ? 'libPreset' : entry.kind === 'custom' ? 'libCustom' : 'libAdd',
+      );
+      nameRow.appendChild(badge);
+      const meta = document.createElement('div');
+      meta.className = 'library-meta';
+      meta.textContent = [entry.groupLabel, entry.typeLabel, entry.altitudeLabel]
+        .filter((part) => part.length > 0)
+        .join(' · ');
+      info.append(nameRow, meta);
+
+      const action = document.createElement('button');
+      action.type = 'button';
+      action.className = 'hud-btn library-btn is-active';
+      action.dataset.role = 'remove';
+      action.textContent = t(language, 'libRemove');
+      action.addEventListener('click', () => {
+        callbacks.onToggle(entry.noradId);
+        renderManage();
+        if (open && activeTab === 'library') renderLibrary();
+      });
+      item.append(info, action);
+      manageList.appendChild(item);
     }
   }
 
@@ -481,6 +566,7 @@ export function mountAddSatellite(root: HTMLElement, callbacks: AddSatelliteCall
     renderText();
     renderTleStatus();
     if (activeTab === 'library') renderLibrary();
+    if (activeTab === 'manage') renderManage();
   }
 
   closeButton.addEventListener('click', closeDialog);
@@ -515,6 +601,30 @@ export function mountAddSatellite(root: HTMLElement, callbacks: AddSatelliteCall
     anchor.click();
     URL.revokeObjectURL(url);
     callbacks.notify(t(lang(), 'toastExported'));
+  });
+
+  restoreButton.addEventListener('click', () => {
+    callbacks.onRestoreDefaults();
+    renderManage();
+    renderLibrary();
+  });
+  removeAllButton.addEventListener('click', () => {
+    // 自定义卫星是用户自己加的，「全部移除」连它们一起删，所以要点两次确认
+    if (!removeAllArmed) {
+      removeAllArmed = true;
+      renderManage();
+      window.clearTimeout(armTimer);
+      armTimer = window.setTimeout(() => {
+        removeAllArmed = false;
+        renderManage();
+      }, 4000);
+      return;
+    }
+    window.clearTimeout(armTimer);
+    removeAllArmed = false;
+    callbacks.onRemoveAll();
+    renderManage();
+    renderLibrary();
   });
 
   return {

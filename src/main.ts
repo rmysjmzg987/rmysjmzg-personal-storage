@@ -38,6 +38,7 @@ import { createFootprint } from './viz/footprint';
 import { createCityLabels, cityKey, isCityWithin, type CityLabelHandle } from './ui/cityLabels';
 import { mountHud, type HudState, type LayerKey } from './ui/hud';
 import { mountDetail, type DetailView } from './ui/detail';
+import { mountSearchBar } from './ui/searchBar';
 import { t, type Lang } from './ui/i18n';
 
 const FALLBACK_SNAPSHOT = '2026-09-16';
@@ -97,7 +98,12 @@ async function bootstrap(): Promise<void> {
 
   const dayUrl = await resolveTextureUrl(base + 'textures/earth-day.jpg');
   const nightUrl = await resolveTextureUrl(base + 'textures/earth-night.jpg');
-  const earth = await createEarth({ dayUrl, nightUrl });
+  const earth = await createEarth({
+    dayUrl,
+    nightUrl,
+    maxAnisotropy: ctx.renderer.capabilities.getMaxAnisotropy(),
+    maxTextureSize: ctx.renderer.capabilities.maxTextureSize,
+  });
   ctx.scene.add(earth.group);
 
   const starfield = createStarfield(settings.starCount);
@@ -134,7 +140,10 @@ async function bootstrap(): Promise<void> {
   function rebuildRecords(): SatelliteRecord[] {
     if (!data) return [];
     const enabled = new Set(customStore.enabledLibraryIds);
-    const base = data.records.filter((record) => record.preset || enabled.has(record.noradId));
+    const hidden = new Set(customStore.hiddenPresetIds);
+    const base = data.records.filter((record) =>
+      record.preset ? !hidden.has(record.noradId) : enabled.has(record.noradId),
+    );
     const custom = customStore.customSatellites.map((meta) =>
       buildRecord(meta, data!.orbitTypeByKey, { custom: true, idPrefix: 'user' }),
     );
@@ -172,6 +181,8 @@ async function bootstrap(): Promise<void> {
       noradId: record.noradId,
       name: displayName(record, lang),
       secondary: lang === 'zh' ? record.label ?? '' : record.labelZh ?? '',
+      // 中英原名都进搜索索引，中文界面同样能用 "sentinel" / "landsat" 搜到
+      aliases: [record.name, record.label ?? '', record.labelZh ?? ''],
       groupKey: kind === 'custom' ? 'custom' : record.group,
       groupLabel:
         kind === 'custom'
@@ -187,11 +198,16 @@ async function bootstrap(): Promise<void> {
   function libraryEntries(): AddSatelliteEntry[] {
     if (!data) return [];
     const activeIds = new Set(records.map((record) => record.id));
+    const hiddenPresetIds = new Set(customStore.hiddenPresetIds);
     const groupOrder = new Map(data.groups.map((group, index) => [group.key, index]));
     const entries: AddSatelliteEntry[] = [];
     for (const record of data.records) {
       entries.push(
-        entryOf(record, record.preset ? 'preset' : 'library', record.preset === true || activeIds.has(record.id)),
+        entryOf(
+          record,
+          record.preset ? 'preset' : 'library',
+          activeIds.has(record.id) || (record.preset === true && !hiddenPresetIds.has(record.noradId)),
+        ),
       );
     }
     for (const record of records) {
@@ -320,6 +336,17 @@ async function bootstrap(): Promise<void> {
       }
       const meta = data?.records.find((record) => record.noradId === noradId);
       const name = meta ? displayName(meta, state.lang) : `NORAD ${noradId}`;
+      // 预制卫星：从场景里移除／重新加回（记录在 hiddenPresetIds）
+      if (meta?.preset) {
+        const hidden = customStore.hiddenPresetIds.includes(noradId);
+        customStore.hiddenPresetIds = hidden
+          ? customStore.hiddenPresetIds.filter((id) => id !== noradId)
+          : [...customStore.hiddenPresetIds, noradId];
+        persistStore();
+        refreshScene();
+        showToast(t(state.lang, hidden ? 'toastAdded' : 'toastRemoved', { name }));
+        return;
+      }
       const enabled = customStore.enabledLibraryIds.includes(noradId);
       customStore.enabledLibraryIds = enabled
         ? customStore.enabledLibraryIds.filter((id) => id !== noradId)
@@ -327,6 +354,24 @@ async function bootstrap(): Promise<void> {
       persistStore();
       refreshScene();
       showToast(t(state.lang, enabled ? 'toastRemoved' : 'toastAdded', { name }));
+    },
+    onRestoreDefaults: () => {
+      customStore.enabledLibraryIds = [];
+      customStore.hiddenPresetIds = [];
+      customStore.customSatellites = [];
+      persistStore();
+      refreshScene();
+      showToast(t(state.lang, 'toastRestored'));
+    },
+    onRemoveAll: () => {
+      customStore.enabledLibraryIds = [];
+      customStore.customSatellites = [];
+      customStore.hiddenPresetIds = (data?.records ?? [])
+        .filter((record) => record.preset)
+        .map((record) => record.noradId);
+      persistStore();
+      refreshScene();
+      showToast(t(state.lang, 'toastCleared'));
     },
     onImport: (rawText) => {
       const parsed = parseStore(rawText);
@@ -365,6 +410,31 @@ async function bootstrap(): Promise<void> {
     },
   });
 
+  /** 确保某颗卫星出现在场景里（预制卫星取消隐藏、库卫星加入启用列表） */
+  function ensureVisible(noradId: number): SatelliteRecord | null {
+    const existing = records.find((record) => record.noradId === noradId);
+    if (existing) return existing;
+    const meta = data?.records.find((record) => record.noradId === noradId);
+    if (!meta) return null;
+    if (meta.preset) {
+      customStore.hiddenPresetIds = customStore.hiddenPresetIds.filter((id) => id !== noradId);
+    } else if (!customStore.enabledLibraryIds.includes(noradId)) {
+      customStore.enabledLibraryIds = [...customStore.enabledLibraryIds, noradId];
+    }
+    persistStore();
+    refreshScene();
+    return records.find((record) => record.noradId === noradId) ?? null;
+  }
+
+  const searchBar = mountSearchBar(hudRoot, {
+    lang: () => state.lang,
+    entries: () => libraryEntries(),
+    onPick: (noradId) => {
+      const record = ensureVisible(noradId);
+      if (record) lockOn(record);
+    },
+  });
+
   const hud = mountHud(
     hudRoot,
     (): HudState => ({
@@ -397,6 +467,7 @@ async function bootstrap(): Promise<void> {
         hud.refresh();
         updateDetail();
         addSatellite.refresh();
+        searchBar.refresh();
       },
       onToggleLayer: (key) => {
         state.layers[key] = !state.layers[key];

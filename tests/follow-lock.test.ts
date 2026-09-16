@@ -181,6 +181,85 @@ describe('滚轮缩放', () => {
   });
 });
 
+describe('正视模式滚轮缩放', () => {
+  it('推远与拉近都立即生效', () => {
+    const { camera, controls, follow, advance } = setup();
+    follow.setViewMode('side');
+    advance(150);
+    const base = camera.position.distanceTo(controls.target);
+    expect(follow.zoomFactor()).toBeCloseTo(1, 6);
+    follow.zoomBy(500);
+    advance(40);
+    const far = camera.position.distanceTo(controls.target);
+    expect(far).toBeGreaterThan(base * 1.5);
+    follow.zoomBy(-1000);
+    advance(40);
+    const near = camera.position.distanceTo(controls.target);
+    expect(near).toBeLessThan(far * 0.5);
+    expect(near).toBeGreaterThan(50);
+  });
+
+  it('缩放后的距离不会被本位距离拉回', () => {
+    const { camera, controls, follow, advance } = setup();
+    follow.setViewMode('side');
+    advance(150);
+    follow.zoomBy(600);
+    advance(2);
+    const zoomed = camera.position.distanceTo(controls.target);
+    // 静置数秒：若仍按本位距离收敛，这里会明显缩小
+    for (let i = 0; i < 300; i += 1) advance(1);
+    expect(camera.position.distanceTo(controls.target)).toBeCloseTo(zoomed, 3);
+  });
+
+  it('切换取景模式与重新锁定时缩放倍率复位', () => {
+    const { follow, advance } = setup();
+    follow.setViewMode('side');
+    advance(150);
+    follow.zoomBy(600);
+    expect(follow.zoomFactor()).toBeGreaterThan(1.5);
+    follow.setViewMode('nadir');
+    expect(follow.zoomFactor()).toBeCloseTo(1, 6);
+    follow.zoomBy(600);
+    follow.lock('sat2', { x: 0, y: 0, z: 7071 }, 2400);
+    expect(follow.zoomFactor()).toBeCloseTo(1, 6);
+  });
+
+  it('静止轨道这类远端目标不会被推到看不见地球的距离', () => {
+    let clockMs = 0;
+    const camera = new THREE.PerspectiveCamera(50, 1.2, 20, 4_000_000);
+    camera.position.set(0, -18000, 12000);
+    const controls = stubControls();
+    const follow = createFollowController({
+      camera,
+      controls,
+      transitionMs: 16,
+      viewportHeight: () => 800,
+      now: () => clockMs,
+    });
+    // 42164 km ≈ 静止轨道半径，本位正视距离约 82300 km
+    const geo = { x: 0, y: 0, z: 42164 };
+    follow.lock('geo', geo, 26000);
+    follow.setViewMode('side');
+    const tick = (frames: number) => {
+      for (let i = 0; i < frames; i += 1) {
+        clockMs += 16;
+        follow.update(geo, 16);
+      }
+    };
+    tick(200);
+    for (let i = 0; i < 200; i += 1) follow.zoomBy(400);
+    tick(200);
+    const far = camera.position.distanceTo(controls.target);
+    expect(far).toBeLessThanOrEqual(90_001);
+    expect(far).toBeGreaterThan(60_000);
+    for (let i = 0; i < 400; i += 1) follow.zoomBy(-400);
+    tick(200);
+    const near = camera.position.distanceTo(controls.target);
+    expect(near).toBeGreaterThanOrEqual(120);
+    expect(near).toBeLessThan(5_000);
+  });
+});
+
 describe('取景模式切换', () => {
   it('正视模式把中心移到光锥中点，视线接近水平', () => {
     const { camera, controls, follow, satellite, advance } = setup();

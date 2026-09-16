@@ -35,6 +35,8 @@ export interface FollowController {
   panBy(dxPx: number, dyPx: number): void;
   /** 滚轮缩放：wheelDelta 为 WheelEvent.deltaY */
   zoomBy(wheelDelta: number): void;
+  /** 当前缩放倍率（相对本位取景距离） */
+  zoomFactor(): number;
   /** 拖拽期间冻结画面回正，手感与未锁定时一致 */
   setDragging(dragging: boolean): void;
   update(target: Vec3 | null, dtMs: number): void;
@@ -70,6 +72,9 @@ const PAN_LIMIT_FACTOR = 1.6;
 /** 手动缩放范围（相对本位取景距离） */
 const ZOOM_MIN_FACTOR = 0.04;
 const ZOOM_MAX_FACTOR = 14;
+/** 缩放的绝对上下限（km）：静止轨道这类本位距离本就极远的卫星，倍率再乘上去会看不见地球 */
+const ABS_MIN_DISTANCE = 120;
+const ABS_MAX_DISTANCE = 90_000;
 /** 相机到地心的最小安全半径，避免拖到地球内部 */
 const CAMERA_SAFE_RADIUS = EARTH_RADIUS_KM * 1.02;
 
@@ -149,6 +154,8 @@ export function createFollowController(options: FollowControllerOptions): Follow
   let distance = 0;
   let adaptive = false;
   let dragging = false;
+  /** 用户滚轮缩放倍率（相对本位取景距离）；锁定或切换视角时复位 */
+  let zoomFactor = 1;
   let transitionStart = 0;
   let transitioning = false;
   const fromCenter = new THREE.Vector3();
@@ -219,9 +226,12 @@ export function createFollowController(options: FollowControllerOptions): Follow
     return desiredDistanceKm;
   };
 
-  const zoomRange = () => {
+  /** 本位距离叠加用户缩放倍率后的目标取景距离 */
+  const targetDistance = () => {
     const base = intrinsicDistance();
-    return { min: Math.max(120, base * ZOOM_MIN_FACTOR), max: Math.max(600, base * ZOOM_MAX_FACTOR) };
+    const min = Math.max(ABS_MIN_DISTANCE, base * ZOOM_MIN_FACTOR);
+    const max = Math.min(ABS_MAX_DISTANCE, base * ZOOM_MAX_FACTOR);
+    return Math.min(Math.max(base * zoomFactor, min), max);
   };
 
   /** 记录当前机位，开始一段平滑过渡 */
@@ -249,6 +259,7 @@ export function createFollowController(options: FollowControllerOptions): Follow
   const applyMode = (next: ViewMode) => {
     if (next === mode) return;
     mode = next;
+    zoomFactor = 1;
     panOffset.set(0, 0, 0);
     if (next === 'side') {
       if (Math.abs(Math.sin(elevation)) < 0.08) pickSideAzimuth();
@@ -264,6 +275,7 @@ export function createFollowController(options: FollowControllerOptions): Follow
       activeId = id;
       desiredDistanceKm = Math.max(400, desiredDistance);
       mode = 'nadir';
+      zoomFactor = 1;
       azimuth = 0;
       elevation = 0;
       panOffset.set(0, 0, 0);
@@ -347,12 +359,14 @@ export function createFollowController(options: FollowControllerOptions): Follow
     },
     zoomBy(wheelDelta) {
       if (!activeId) return;
-      const range = zoomRange();
-      const next = distance * Math.exp(wheelDelta * 0.0012);
-      distance = Math.max(range.min, Math.min(range.max, next));
+      // 缩放记在倍率上而不是直接改距离，这样正视/大椭圆模式下也不会被本位距离"拉回去"
+      const next = zoomFactor * Math.exp(wheelDelta * 0.0012);
+      zoomFactor = Math.max(ZOOM_MIN_FACTOR, Math.min(ZOOM_MAX_FACTOR, next));
+      distance = targetDistance();
       const limit = distance * PAN_LIMIT_FACTOR;
       if (panOffset.length() > limit) panOffset.setLength(limit);
     },
+    zoomFactor: () => zoomFactor,
     update(target, dtMs) {
       if (!activeId || !target) return;
       const dt = Math.max(0.001, dtMs / 1000);
@@ -361,7 +375,6 @@ export function createFollowController(options: FollowControllerOptions): Follow
       filtered.lerp(scratchView, alpha);
       refreshBasis();
 
-      const base = intrinsicDistance();
       // 视角中心：俯视模式跟随卫星本体，正视模式取光锥中点（卫星与星下点之间）
       goalCenter.copy(filtered);
       if (mode === 'side') {
@@ -379,7 +392,7 @@ export function createFollowController(options: FollowControllerOptions): Follow
         scratchView.copy(fromDirection).lerp(scratchDir, eased);
         if (scratchView.lengthSq() < 1e-8) scratchView.copy(scratchDir);
         scratchView.normalize();
-        distance = fromDistance + (base - fromDistance) * eased;
+        distance = fromDistance + (targetDistance() - fromDistance) * eased;
         camera.position.copy(center).addScaledVector(scratchView, distance);
         camera.fov = BASE_FOV + (LOCK_FOV - BASE_FOV) * Math.sin(Math.PI * eased);
         camera.updateProjectionMatrix();
@@ -391,9 +404,9 @@ export function createFollowController(options: FollowControllerOptions): Follow
           previousFiltered.copy(filtered);
         }
       } else {
-        // 正视模式与自适应距离：向本位取景距离平滑收敛（用户手动缩放后即时生效）
+        // 正视模式与自适应距离：只追随本位距离的变化（高度、模式），用户的缩放倍率始终保留
         if (mode === 'side' || adaptive) {
-          distance += (base - distance) * Math.min(1, dt * (adaptive ? 0.6 : 1.2));
+          distance += (targetDistance() - distance) * Math.min(1, dt * (adaptive ? 0.6 : 1.2));
         }
         center.copy(goalCenter);
         camera.position.copy(center).addScaledVector(scratchDir, distance);

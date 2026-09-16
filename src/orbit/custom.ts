@@ -9,12 +9,14 @@ export interface CustomStoreData {
   version: 1;
   /** 用户从内置卫星库里启用的卫星（NORAD 编号） */
   enabledLibraryIds: number[];
+  /** 被用户从场景中移除的预制卫星（NORAD 编号） */
+  hiddenPresetIds: number[];
   /** 用户自定义卫星 */
   customSatellites: SatelliteMeta[];
 }
 
 export function emptyStore(): CustomStoreData {
-  return { version: 1, enabledLibraryIds: [], customSatellites: [] };
+  return { version: 1, enabledLibraryIds: [], hiddenPresetIds: [], customSatellites: [] };
 }
 
 function isTleLine(line: unknown, marker: string): line is string {
@@ -64,6 +66,15 @@ export function parseStore(raw: string | null | undefined): CustomStoreData {
     if (!Number.isFinite(id) || id <= 0 || seen.has(id)) continue;
     seen.add(id);
     store.enabledLibraryIds.push(Math.round(id));
+  }
+
+  const hiddenIds = Array.isArray(source.hiddenPresetIds) ? source.hiddenPresetIds : [];
+  const hiddenSeen = new Set<number>();
+  for (const value of hiddenIds) {
+    const id = Number(value);
+    if (!Number.isFinite(id) || id <= 0 || hiddenSeen.has(id)) continue;
+    hiddenSeen.add(id);
+    store.hiddenPresetIds.push(Math.round(id));
   }
 
   const customs = Array.isArray(source.customSatellites) ? source.customSatellites : [];
