@@ -27,8 +27,8 @@ A self-contained, front-end-only 3D satellite orbit visualiser. It uses real TLE
 
 Go to <https://rmysjmzg987.github.io/rmysjmzg-personal-storage/> in any browser.
 
-> The repo ships an auto-deploy workflow (`.github/workflows/deploy.yml`) that rebuilds and publishes on every push to `main`.
-> **One-time setup: pick Settings → Pages → Source → “GitHub Actions”** — until that is switched on, the URL above stays a 404.
+> The repo ships an auto-deploy workflow (`.github/workflows/deploy.yml`) that rebuilds and publishes on every push to `main`. It is already switched on here, so the URL above just works.
+> If you **fork or clone this into your own repo**, pick Settings → Pages → Source → “GitHub Actions” first, otherwise the URL stays a 404.
 
 ### Option 2: run it locally (offline use, or you want to change the code)
 

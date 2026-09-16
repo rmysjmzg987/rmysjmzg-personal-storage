@@ -30,8 +30,8 @@
 
 用浏览器打开 <https://rmysjmzg987.github.io/rmysjmzg-personal-storage/> 即可，什么都不用装。
 
-> 仓库里已经带好自动部署工作流 `.github/workflows/deploy.yml`：每次推送到 `main` 都会重新构建并发布。
-> **首次使用需要先在仓库 Settings → Pages → Source 里选 “GitHub Actions”**，否则这个地址会一直 404。
+> 仓库里带好了自动部署工作流 `.github/workflows/deploy.yml`：每次推送到 `main` 都会重新构建并发布，本仓库已经开启，直接访问即可。
+> 如果你是 **fork 或克隆到自己的仓库**，需要先在 Settings → Pages → Source 里选 “GitHub Actions”，否则地址会一直是 404。
 
 ### 方式二：下载到本地跑（离线用、或者想改代码）
 
