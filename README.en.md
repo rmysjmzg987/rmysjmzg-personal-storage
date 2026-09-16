@@ -4,7 +4,7 @@ A self-contained, front-end-only 3D satellite orbit visualiser. It uses real TLE
 
 > Data accuracy is for demonstration and visualisation only — not for operational use.
 
-Change history lives in [CHANGELOG.md](CHANGELOG.md); the current release is **v0.4**.
+Change history lives in [CHANGELOG.md](CHANGELOG.md) and on the [Releases page](https://github.com/rmysjmzg987/rmysjmzg-personal-storage/releases); the current release is **v0.4.0**.
 
 ## Highlights
 

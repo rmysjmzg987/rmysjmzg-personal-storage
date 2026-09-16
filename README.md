@@ -4,7 +4,7 @@
 
 > 数据精度仅供演示与观赏，请勿用于任何实际任务。
 
-更新记录见 [CHANGELOG.md](CHANGELOG.md)，当前版本 **v0.4**。
+更新记录见 [CHANGELOG.md](CHANGELOG.md) 与 [Releases 更新公告](https://github.com/rmysjmzg987/rmysjmzg-personal-storage/releases)，当前版本 **v0.4.0**。
 
 ## 功能亮点
 
