@@ -18,7 +18,7 @@
 - **自由添加卫星**：
   - 粘贴 TLE（2 行或 3 行，可从 [CelesTrak](https://celestrak.org/NORAD/elements/) 复制）；
   - 用轨道根数表单生成（近地点高度、偏心率、倾角、RAAN、近地点幅角、平近点角），内置 6 个快速模板；
-  - 从内置卫星库挑选 **162 颗**备选真实卫星，分为遥感影像、气象、载人航天、通信中继、导航、科学探测、大椭圆与特殊七大类，列表可滚动、可搜索（Landsat 8、Terra、Aqua、Aura、Sentinel-1/2/3/5P/6、WorldView、RADARSAT、ALOS、高分、资源、NOAA、风云、GOES、向日葵、流星、MetOp、北斗、GPS、伽利略、格洛纳斯、准天顶、铱星、一网、星链、O3B、Inmarsat、Intelsat、TDRS、哈勃、XMM-Newton、钱德拉、慧眼、天宫、神舟、子午线、闪电……）。
+  - 从内置卫星库挑选 **180 颗**备选真实卫星，分为遥感影像、气象、载人航天、通信中继、导航、科学探测、大椭圆与特殊七大类，列表可滚动、可搜索（Landsat 8、Terra、Aqua、Aura、Sentinel-1/2/3/5P/6、WorldView、RADARSAT、ALOS、高分、资源、NOAA、风云、GOES、向日葵、流星、MetOp、北斗、GPS、伽利略、格洛纳斯、准天顶、铱星、一网、星链、O3B、Inmarsat、Intelsat、TDRS、哈勃、XMM-Newton、钱德拉、慧眼、天宫、神舟、子午线、闪电……）。
 - **本地保存与迁移**：自定义卫星和启用的库卫星存在浏览器 localStorage，可随时「导出 / 导入」JSON 备份或分享。
 - **中英文切换**：界面、城市名、卫星名、轨道类型说明全部双语。
 - **时间控制**：×1 / ×10 / ×60 / ×600 倍率，可暂停、一键回到本机当前时间。
@@ -26,31 +26,43 @@
 
 ## 快速开始
 
-需要 Node.js 18 或更高版本。
+### 方式一：直接在线用（推荐，零安装）
+
+用浏览器打开 <https://rmysjmzg987.github.io/rmysjmzg-personal-storage/> 即可，什么都不用装。
+
+> 仓库里已经带好自动部署工作流 `.github/workflows/deploy.yml`：每次推送到 `main` 都会重新构建并发布。
+> **首次使用需要先在仓库 Settings → Pages → Source 里选 “GitHub Actions”**，否则这个地址会一直 404。
+
+### 方式二：下载到本地跑（离线用、或者想改代码）
+
+需要 **Node.js 20.19+ 或 22.12+**（Vite 8 的要求；Node 18 会在启动时直接报错）。
 
 ```bash
-npm install      # 安装依赖
-npm run dev      # 启动开发服务器（Vite 会给出本地地址）
+git clone https://github.com/rmysjmzg987/rmysjmzg-personal-storage.git
+cd rmysjmzg-personal-storage
+npm install
+npm run dev        # Vite 会打印本地地址，浏览器打开它即可
 ```
 
-构建与预览静态产物：
+### 方式三：打包成静态站点，丢到任意托管
 
 ```bash
-npm run build    # 类型检查 + 打包到 dist/
-npm run preview  # 本地预览 dist/
+npm run build      # 类型检查 + 打包到 dist/
+npm run preview    # 先本地预览一下 dist/ 的效果
 ```
 
-运行测试：
+`dist/` 是一份纯静态产物（构建用相对路径，放在子目录里也能跑），上传到 GitHub Pages、Vercel、Netlify、nginx、对象存储都可以。
+
+> 页面需要 WebGL 和 http(s) 环境：直接双击 `dist/index.html`（`file://` 协议）浏览器会拦掉数据文件的加载，必须走一个本地或线上的静态服务器。
+
+### 其他命令
 
 ```bash
-npm test
+npm test               # 单元测试（Vitest）
+npm run lint           # ESLint
+npm run fetch:tle      # 从 CelesTrak 刷新 TLE 快照（可选，需联网）
+npm run fetch:textures # 抓取 NASA 高清贴图母版（可选，仓库内已带缩放版）
 ```
-
-### 在线访问（GitHub Pages）
-
-仓库内置了自动部署工作流。把代码推送到 `main` 分支后，在仓库 **Settings → Pages → Source** 选择 **GitHub Actions**，稍等片刻即可通过 `https://<用户名>.github.io/<仓库名>/` 访问。
-
-> 页面需要 WebGL 与 http(s) 环境；直接双击 `dist/index.html`（file:// 协议）无法加载数据文件。
 
 ## 操作指南
 
@@ -76,7 +88,7 @@ npm test
 
 1. 打开「添加卫星」弹窗。
 2. 三种方式任选其一：
-   - **卫星库**：搜索或滚动浏览七大类共 162 颗，点「添加」；预设的 18 颗默认显示，其余可自由增删。
+   - **卫星库**：搜索或滚动浏览七大类共 180 颗，点「添加」；预设的 18 颗默认显示，其余可自由增删。
    - **粘贴 TLE**：从 CelesTrak 等站点复制两行或三行 TLE 粘贴即可，识别成功会显示 NORAD 编号。
    - **轨道根数**：填近地点高度、偏心率、倾角等参数，或点一个模板（赤道低轨 / 极轨 / 太阳同步 / 地球静止 / 大椭圆 / 逆行）后微调。
 3. 视场角（FOV）决定拍摄范围光锥的宽度，可按需调整。

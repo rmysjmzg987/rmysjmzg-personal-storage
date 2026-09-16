@@ -295,9 +295,9 @@ interface Propagator {
 ### 9.2 预制卫星（18 颗，默认显示）
 9 类轨道各 2 颗，清单见 §17。全部为真实在轨卫星与真实 TLE。
 
-### 9.3 内置卫星库（供"添加卫星"选择，162 颗 · 七大类）
-> 实现阶段扩充为 162 颗，按轨道类型均衡挑选：太阳同步 64、低地球轨道 23、地球静止 23、大椭圆 21、
-> 倾斜同步 16、中地球轨道 12、极轨 11、赤道低轨 7、逆行 3（含 18 颗预制）。
+### 9.3 内置卫星库（供"添加卫星"选择，180 颗 · 七大类）
+> 实现阶段逐步扩充到 180 颗（含 18 颗预制），按分组：遥感影像 50、气象 31、科学探测 27、导航 26、
+> 大椭圆与特殊 20、通信中继 17、载人航天 9。
 > 「通信中继」为新增分组，补足 Inmarsat / Intelsat / TDRS / 铱星 / 一网 / 星链 / O3B 等公众熟悉的通信卫星。
 
 - 遥感影像：Landsat 8/9、Sentinel-1A/1C/2A/2B/3A/3B/5P/6A/6B、Terra、Aqua、Aura、Suomi NPP、NOAA-20/21、Metop-B/C、WorldView-2/3、GeoEye-1、Pleiades 1A/Neo-3、SPOT 6/7、TerraSAR-X、TanDEM-X、RADARSAT-2、ALOS-2/4、KOMPSAT-3A、Cartosat-2C、Resourcesat-2A、高分一号/二号/三号、资源/海洋/环境系列、CBERS-4/4A、SAOCOM-1A、ICEYE-X2、Capella-11、DS-EO、TeLEOS-2
@@ -310,9 +310,10 @@ interface Propagator {
 
 ### 9.4 数据文件
 - `public/data/catalog.json`：离线快照，结构
-  `{ snapshotDate, source, satellites: [ { noradId, name, nameEn, tle1, tle2, group: "preset"|"library", category, tags, descZh, descEn } ] }`
+  `{ snapshotDate, source, satellites: [ { noradId, name, labelZh, group, fovDeg, tle1, tle2, descZh, descEn, preset } ] }`
+  其中 `group` 取值 `remote | weather | crewed | comms | navigation | science | heo`，`preset: true` 的 18 颗默认显示。
 - `public/data/orbit-types.json`：9 类轨道的科普说明（中/英），用于 FR-69 的 ⓘ 提示。
-- `public/data/cities.json`：约 80 座城市（中/英名 + 经纬度），用于 FR-49 城市高亮。
+- `public/data/cities.json`：102 座城市（中/英名 + 经纬度），用于 FR-49 城市高亮。
 - `scripts/fetch-tle.mjs` + `npm run fetch:tle`：重新生成 catalog.json（需联网，可选）。
 - 自定义卫星：localStorage（key `satviz.custom.v1`）+ JSON 导入导出（带 schema 版本号）。
 
@@ -428,7 +429,7 @@ Playwright 冒烟：启动 → 等首帧 → 点击列表首项 → 断言选中
 | D12 | 锁定态交互与未锁定态语义一致：**左键**绕当前视角中心旋转、**右键**移动视角中心、**滚轮**缩放。锁定期间 OrbitControls 完全停用，相机由 `followCamera.ts` 独占驱动，视角中心始终是移动中的卫星（正视模式为光锥中点），避免连续拖拽方向跳变 |
 | D13 | 新增**视角切换**：`V` 键或详情卡「视角」按钮，在**俯视**（相机在卫星本地天顶，卫星居中、地球在下）与**正视**（水平侧视，中心为光锥中点，卫星在上、地球在下）之间切换；正视模式的取景距离随卫星高度自适应（2.3 × 高度，下限 1600 km） |
 | D14 | 星空按**无限远背景**处理：星空球每帧跟随相机位置，任何缩放级别都不会被"缩掉"或穿帮 |
-| D15 | 内置卫星库由 58 颗扩充到 **162 颗**并新增「通信中继」分组；添加卫星弹窗的列表支持滚动与搜索 |
+| D15 | 内置卫星库由 58 颗扩充到 **162 颗**并新增「通信中继」分组；后续补齐到 **180 颗**（分组构成见 §9.3）；添加卫星弹窗的列表支持滚动与搜索 |
 | D16 | 极轨/静止/大椭圆等轨道的锁定机位按 §4 规则分别验证，斜视/正视图不得出现卫星出画或镜头翻转 |
 | D17 | 正视模式**必须能自由滚轮缩放**：缩放状态改为"叠加在本位取景距离上的倍率"（0.04×–14×），再夹在绝对距离 120–90000 km 内。换轨道、换视角、重锁定时倍率重置，但同一视图中不会被本位距离悄悄拉回 |
 | D18 | 新增**底部搜索栏**：常驻页面底部，`/` 聚焦；按本地化名称前缀 > 名称包含 > 中英原名（别名）> NORAD 编号 > 轨道分组名实时匹配，最多 40 条；点击结果或回车即把该卫星加入场景（若原本隐藏）并锁定跟随。匹配逻辑抽成纯函数 `matchSatellite()` 以便单测 |

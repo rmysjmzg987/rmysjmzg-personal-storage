@@ -15,7 +15,7 @@ A self-contained, front-end-only 3D satellite orbit visualiser. It uses real TLE
 - **Locked-mode controls match the free view**: drag with the left button to orbit around the current view centre (which is the moving satellite), drag with the right button to move that centre, and scroll to zoom. Both lock framings zoom freely — your zoom level is never pulled back by the orbit altitude or the framing mode. The frame keeps north up with a rate-limited roll, so it never flips over the poles.
 - **Search dock**: a search field sits at the bottom of the page (press `/` to focus). It matches live on the localised name, the original name in either language, or the NORAD id — typing `sentinel`, `landsat` or `iss` works in the Chinese UI too. Hit Enter or click a result to drop that satellite into the scene and lock on.
 - **Orbit manager**: the dialog has a Manage tab listing everything currently on screen. Remove satellites one by one (presets included) or use "Restore defaults" / "Remove all" — nothing is lost, removed entries can be added back from the library.
-- **Add your own satellites**: paste a TLE (2 or 3 lines), build one from orbital elements with six quick templates, or pick from the built-in library of **162** real satellites across seven groups (Earth imaging, weather, crewed, communications, navigation, science, HEO & special) in a scrollable, searchable list (Landsat 8, Terra, Aqua, Sentinel-1/2/3/5P/6, WorldView, RADARSAT, ALOS, NOAA, Fengyun, GOES, Himawari, Meteor, MetOp, BeiDou, GPS, Galileo, GLONASS, QZSS, Iridium, OneWeb, Starlink, O3B, Inmarsat, Intelsat, TDRS, Hubble, XMM-Newton, Chandra, HXMT, Tiangong, Shenzhou, Meridian, Molniya and more).
+- **Add your own satellites**: paste a TLE (2 or 3 lines), build one from orbital elements with six quick templates, or pick from the built-in library of **180** real satellites across seven groups (Earth imaging, weather, crewed, communications, navigation, science, HEO & special) in a scrollable, searchable list (Landsat 8, Terra, Aqua, Sentinel-1/2/3/5P/6, WorldView, RADARSAT, ALOS, NOAA, Fengyun, GOES, Himawari, Meteor, MetOp, BeiDou, GPS, Galileo, GLONASS, QZSS, Iridium, OneWeb, Starlink, O3B, Inmarsat, Intelsat, TDRS, Hubble, XMM-Newton, Chandra, HXMT, Tiangong, Shenzhou, Meridian, Molniya and more).
 - **Local persistence**: custom satellites and enabled library entries live in localStorage and can be exported/imported as JSON.
 - **Bilingual UI**: Chinese and English for interface, city names, satellite names and orbit descriptions.
 - **Time control**: ×1 / ×10 / ×60 / ×600 rates, pause and "back to now".
@@ -23,21 +23,43 @@ A self-contained, front-end-only 3D satellite orbit visualiser. It uses real TLE
 
 ## Getting started
 
-Requires Node.js 18 or newer.
+### Option 1: just open it online (no install)
+
+Go to <https://rmysjmzg987.github.io/rmysjmzg-personal-storage/> in any browser.
+
+> The repo ships an auto-deploy workflow (`.github/workflows/deploy.yml`) that rebuilds and publishes on every push to `main`.
+> **One-time setup: pick Settings → Pages → Source → “GitHub Actions”** — until that is switched on, the URL above stays a 404.
+
+### Option 2: run it locally (offline use, or you want to change the code)
+
+Requires **Node.js 20.19+ or 22.12+** (that is what Vite 8 needs; Node 18 fails immediately on startup).
 
 ```bash
+git clone https://github.com/rmysjmzg987/rmysjmzg-personal-storage.git
+cd rmysjmzg-personal-storage
 npm install
-npm run dev      # start the dev server
-npm run build    # type-check and build into dist/
-npm run preview  # preview the production build
-npm test         # run unit tests
+npm run dev        # Vite prints the local URL — open that
 ```
 
-### Deploy to GitHub Pages
+### Option 3: build a static bundle and host it anywhere
 
-A workflow is included. Push to `main`, then choose **Settings → Pages → Source → GitHub Actions**; the page becomes available at `https://<user>.github.io/<repo>/`.
+```bash
+npm run build      # type-check, then bundle into dist/
+npm run preview    # preview the dist/ build locally first
+```
 
-> The app needs WebGL and an http(s) origin — opening `dist/index.html` over file:// will not load the data files.
+`dist/` is a plain static bundle built with relative paths, so it also works from a subdirectory. Drop it on GitHub Pages, Vercel, Netlify, nginx, object storage — anything that serves files.
+
+> The app needs WebGL and an http(s) origin — opening `dist/index.html` over file:// will not load the data files, so serve it over http.
+
+### Other commands
+
+```bash
+npm test               # unit tests (Vitest)
+npm run lint           # ESLint
+npm run fetch:tle      # refresh the TLE snapshot from CelesTrak (optional, needs network)
+npm run fetch:textures # pull the full-resolution NASA textures (optional; a downscaled set ships in the repo)
+```
 
 ## Usage
 
