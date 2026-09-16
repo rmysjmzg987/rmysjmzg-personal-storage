@@ -295,13 +295,18 @@ interface Propagator {
 ### 9.2 预制卫星（18 颗，默认显示）
 9 类轨道各 2 颗，清单见 §17。全部为真实在轨卫星与真实 TLE。
 
-### 9.3 内置卫星库（供"添加卫星"选择，约 60–80 颗）
-- 遥感影像：Landsat 8/9、Sentinel-1A/2A/2B/3A/5P/6A、Terra、Aqua、Aura、Suomi NPP、NOAA-20/21、Metop-B/C、WorldView-2/3、Pleiades 1A、SPOT 6/7、TerraSAR-X、高分系列、资源/海洋/环境系列、CBERS-4
-- 气象：风云二号H、风云三号D/F/H、风云四号A/B/C、向日葵9号、GOES-18、Elektro-L
-- 载人航天：ISS、中国空间站（天和/问天/梦天）、神舟、天舟、Cygnus、Crew Dragon
-- 导航：GPS III、北斗三号（MEO/IGSO/GEO）、GLONASS、Galileo
-- 科学：Hubble、XMM-Newton、Chandra、IXPE、NuSTAR、SWOT、Jason-3、Sentinel-6A、ICESat-2、GRACE-FO、LAGEOS-1
-- 大椭圆与特殊：ARKTIKA-M、MERIDIAN、Molniya、EROS C3、遥感五十号
+### 9.3 内置卫星库（供"添加卫星"选择，162 颗 · 七大类）
+> 实现阶段扩充为 162 颗，按轨道类型均衡挑选：太阳同步 64、低地球轨道 23、地球静止 23、大椭圆 21、
+> 倾斜同步 16、中地球轨道 12、极轨 11、赤道低轨 7、逆行 3（含 18 颗预制）。
+> 「通信中继」为新增分组，补足 Inmarsat / Intelsat / TDRS / 铱星 / 一网 / 星链 / O3B 等公众熟悉的通信卫星。
+
+- 遥感影像：Landsat 8/9、Sentinel-1A/1C/2A/2B/3A/3B/5P/6A/6B、Terra、Aqua、Aura、Suomi NPP、NOAA-20/21、Metop-B/C、WorldView-2/3、GeoEye-1、Pleiades 1A/Neo-3、SPOT 6/7、TerraSAR-X、TanDEM-X、RADARSAT-2、ALOS-2/4、KOMPSAT-3A、Cartosat-2C、Resourcesat-2A、高分一号/二号/三号、资源/海洋/环境系列、CBERS-4/4A、SAOCOM-1A、ICEYE-X2、Capella-11、DS-EO、TeLEOS-2
+- 气象：风云二号H、风云三号A/B/C/D/F/G/H、风云四号A/B、向日葵8/9号、GOES-14/16/17/18、Elektro-L 2/3/4、Meteosat-10/12、DMSP F16/F17、GPM-Core、Meteor-M 2/M2-3、Oceansat-2/EOS-6、Scatsat-1、SARAL、INSAT-3DR
+- 载人航天：ISS、中国空间站（天和/问天/梦天）、神舟、天舟、Cygnus、Crew Dragon、Progress-MS
+- 通信中继：Inmarsat 3-F1/4-F1、Intelsat 902/10-02、TDRS-3/5、LUCH-5A/5B、Telstar 18V、SES-17、O3B mPOWER、铱星 NEXT、OneWeb、星链、中国星网、Gonets-M
+- 导航：GPS III、北斗二号/三号（MEO/IGSO/GEO）、GLONASS-M/K/K2、Galileo、QZSS、IRNSS
+- 科学：Hubble、XMM-Newton、Chandra、IXPE、NuSTAR、慧眼 HXMT、XRISM、Fermi、CHEOPS、AstroSat、SWOT、Jason-3、Sentinel-6A/6B、ICESat-2、GRACE-FO、Swarm、SMAP/SMOS、GOSAT/GOSAT-2、OCO-2、LAGEOS-1、IMAGE、POLAR、ARASE
+- 大椭圆与特殊：ARKTIKA-M、MERIDIAN（3/6/7/8/9/10/M-21L）、Molniya、宇宙 2510/2563（EKS 预警）、试验十号、PROBA-3、ASBM、EROS C3、遥感五十号
 
 ### 9.4 数据文件
 - `public/data/catalog.json`：离线快照，结构
@@ -415,6 +420,16 @@ Playwright 冒烟：启动 → 等首帧 → 点击列表首项 → 断言选中
 | D9 | v1 增加：**中英语言切换**、锁定后查看**卫星简介**、"运行轨道"一栏旁的**圆圈感叹号悬停说明**；其余 P2 项（轨道面圆盘、过境预测、分享链接、录屏导出）不进 v1 |
 | D10 | 目标仓库 `https://github.com/rmysjmzg987/rmysjmzg-personal-storage`；MIT 许可；部署 GitHub Pages |
 | D11 | 先在本地跑通并完成全部测试，最后再上传 GitHub；本地按里程碑分步 commit |
+
+### 14.1 首版上线后的追加决策（v0.3）
+
+| 编号 | 决策 |
+|---|---|
+| D12 | 锁定态交互与未锁定态语义一致：**左键**绕当前视角中心旋转、**右键**移动视角中心、**滚轮**缩放。锁定期间 OrbitControls 完全停用，相机由 `followCamera.ts` 独占驱动，视角中心始终是移动中的卫星（正视模式为光锥中点），避免连续拖拽方向跳变 |
+| D13 | 新增**视角切换**：`V` 键或详情卡「视角」按钮，在**俯视**（相机在卫星本地天顶，卫星居中、地球在下）与**正视**（水平侧视，中心为光锥中点，卫星在上、地球在下）之间切换；正视模式的取景距离随卫星高度自适应（2.3 × 高度，下限 1600 km） |
+| D14 | 星空按**无限远背景**处理：星空球每帧跟随相机位置，任何缩放级别都不会被"缩掉"或穿帮 |
+| D15 | 内置卫星库由 58 颗扩充到 **162 颗**并新增「通信中继」分组；添加卫星弹窗的列表支持滚动与搜索 |
+| D16 | 极轨/静止/大椭圆等轨道的锁定机位按 §4 规则分别验证，斜视/正视图不得出现卫星出画或镜头翻转 |
 
 未在本表列出的细节，按本规格其余章节执行。
 

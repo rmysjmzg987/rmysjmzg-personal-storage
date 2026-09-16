@@ -49,7 +49,8 @@ export function createSceneContext(canvas: HTMLCanvasElement): SceneContext {
       renderer.setSize(width, height, false);
     },
     render() {
-      controls.update();
+      // 锁定跟随时由 followCamera 全权接管相机，这里不要再让 OrbitControls 插手
+      if (controls.enabled) controls.update();
       renderer.render(scene, camera);
     },
   };

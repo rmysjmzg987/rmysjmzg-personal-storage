@@ -269,6 +269,7 @@ async function bootstrap(): Promise<void> {
       fov: `${record.fovDeg.toFixed(1)}°`,
       description: state.lang === 'zh' ? record.descZh : record.descEn,
       locked: state.locked && state.selectedId === record.id,
+      viewMode: follow.viewMode(),
     };
     detail.update(view);
   }
@@ -345,6 +346,11 @@ async function bootstrap(): Promise<void> {
 
   const detail = mountDetail(detailRoot, {
     onClose: () => clearSelection(),
+    onToggleView: () => {
+      if (!state.locked) return;
+      follow.toggleViewMode();
+      updateDetail();
+    },
     onToggleLock: () => {
       const record = selectedRecord();
       if (!record) return;
@@ -405,7 +411,7 @@ async function bootstrap(): Promise<void> {
   );
 
   // ---- 交互 ----
-  const pointer = { x: 0, y: 0, downX: 0, downY: 0, down: false, moved: false };
+  const pointer = { x: 0, y: 0, downX: 0, downY: 0, down: false, moved: false, button: 0 };
 
   function updateHover(): void {
     if (!satelliteScene) return;
@@ -440,10 +446,20 @@ async function bootstrap(): Promise<void> {
   }
 
   canvas.addEventListener('pointermove', (event) => {
+    const dx = event.clientX - pointer.x;
+    const dy = event.clientY - pointer.y;
     pointer.x = event.clientX;
     pointer.y = event.clientY;
     if (pointer.down && (Math.abs(event.clientX - pointer.downX) > 3 || Math.abs(event.clientY - pointer.downY) > 3)) {
       pointer.moved = true;
+    }
+    // 锁定状态下自己处理拖拽：左键绕视角中心旋转、右键平移视角中心，
+    // 手感与未锁定时的 OrbitControls 一致，且中心点始终跟着卫星走
+    if (pointer.down && pointer.moved && state.locked && !follow.isTransitioning()) {
+      if (pointer.button === 2) follow.panBy(dx, dy);
+      else follow.rotateBy(dx, dy);
+      tooltip.hidden = true;
+      return;
     }
     updateHover();
   });
@@ -454,13 +470,28 @@ async function bootstrap(): Promise<void> {
   canvas.addEventListener('pointerdown', (event) => {
     pointer.down = true;
     pointer.moved = false;
+    pointer.button = event.button;
     pointer.downX = event.clientX;
     pointer.downY = event.clientY;
+    if (state.locked && (event.button === 0 || event.button === 2)) follow.setDragging(true);
   });
+  // 锁定期间右键要用来平移，屏蔽浏览器右键菜单
+  canvas.addEventListener('contextmenu', (event) => event.preventDefault());
+  canvas.addEventListener(
+    'wheel',
+    (event) => {
+      if (!state.locked) return;
+      event.preventDefault();
+      follow.zoomBy(event.deltaY);
+    },
+    { passive: false },
+  );
   window.addEventListener('pointerup', (event) => {
     const wasDown = pointer.down;
     pointer.down = false;
+    follow.setDragging(false);
     if (!wasDown || pointer.moved || !satelliteScene) return;
+    if (event.button !== 0) return;
     // 卫星点优先；点不到点上时退化为点击轨道线（高轨/远端卫星点非常小）
     const id =
       satelliteScene.pick(event.clientX, event.clientY, 24) ??
@@ -474,6 +505,11 @@ async function bootstrap(): Promise<void> {
   });
   window.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') clearSelection();
+    // V：在俯视 / 正视取景之间切换（仅锁定时有效）
+    if ((event.key === 'v' || event.key === 'V') && state.locked) {
+      follow.toggleViewMode();
+      updateDetail();
+    }
   });
 
   const resize = () => {
@@ -591,6 +627,8 @@ async function bootstrap(): Promise<void> {
       if (!pointer.down) updateHover();
     }
 
+    // 星空当作无限远的背景：跟着相机走，缩放到任何距离都不会被"缩掉"或穿帮
+    starfield.position.copy(ctx.camera.position);
     ctx.render();
 
     sampler.push(dt);

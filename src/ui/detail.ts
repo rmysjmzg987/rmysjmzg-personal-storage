@@ -17,11 +17,14 @@ export interface DetailView {
   fov: string;
   description: string;
   locked: boolean;
+  /** 取景模式：俯视 / 正视 */
+  viewMode: 'nadir' | 'side';
 }
 
 export interface DetailCallbacks {
   onClose(): void;
   onToggleLock(): void;
+  onToggleView(): void;
 }
 
 export function mountDetail(
@@ -42,6 +45,7 @@ export function mountDetail(
     <div class="detail-rows"></div>
     <div class="detail-desc" data-role="desc"></div>
     <div class="detail-actions">
+      <button class="hud-btn" data-role="view"></button>
       <button class="hud-btn hud-btn-primary" data-role="lock"></button>
     </div>
   `;
@@ -52,10 +56,12 @@ export function mountDetail(
   const rowsEl = card.querySelector<HTMLElement>('.detail-rows')!;
   const descEl = card.querySelector<HTMLElement>('[data-role="desc"]')!;
   const lockButton = card.querySelector<HTMLButtonElement>('[data-role="lock"]')!;
+  const viewButton = card.querySelector<HTMLButtonElement>('[data-role="view"]')!;
   const closeButton = card.querySelector<HTMLButtonElement>('[data-role="close"]')!;
 
   closeButton.addEventListener('click', () => callbacks.onClose());
   lockButton.addEventListener('click', () => callbacks.onToggleLock());
+  viewButton.addEventListener('click', () => callbacks.onToggleView());
   // 指针停在卡片上时冻结数值刷新：悬停 (i) 图标时不再改动 DOM，
   // 从根上避免提示气泡被打断造成的闪烁/抖动
   let pointerInside = false;
@@ -124,6 +130,10 @@ export function mountDetail(
       descEl.textContent = view.description;
       descEl.hidden = view.description.length === 0;
       lockButton.textContent = view.locked ? t(view.lang, 'unlock') : t(view.lang, 'lock');
+      viewButton.textContent = view.viewMode === 'side' ? t(view.lang, 'viewModeSide') : t(view.lang, 'viewModeNadir');
+      viewButton.title = t(view.lang, 'viewModeHint');
+      viewButton.setAttribute('aria-label', t(view.lang, 'viewModeHint'));
+      viewButton.disabled = !view.locked;
 
       if (pointerInside) return;
 

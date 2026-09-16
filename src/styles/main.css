@@ -120,6 +120,16 @@ body {
   transform: translateY(1px);
 }
 
+.hud-btn:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.hud-btn:disabled:hover {
+  border-color: var(--hud-border);
+  background: rgba(20, 30, 52, 0.55);
+}
+
 .hud-btn-primary {
   border-color: rgba(57, 230, 195, 0.4);
   color: #d8fff5;
@@ -666,13 +676,16 @@ body {
   min-height: 0;
   overflow: hidden;
   padding: 14px 18px;
+  /* 让面板真正被"框住"高度，列表才能在内部滚动而不是把弹窗撑破 */
+  display: flex;
+  flex-direction: column;
 }
 
 .modal-panel {
   display: none;
   flex-direction: column;
   gap: 10px;
-  height: 100%;
+  flex: 1 1 auto;
   min-height: 0;
 }
 
@@ -783,14 +796,33 @@ body {
 }
 
 .library-list {
-  flex: 1;
-  min-height: 200px;
-  max-height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 2px;
   padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 170, 255, 0.35) transparent;
+}
+
+.library-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.library-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(120, 170, 255, 0.32);
+}
+
+.library-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(140, 190, 255, 0.55);
+}
+
+.library-list::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .library-group {
