@@ -12,6 +12,11 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "paths": {
+      "satellite.js": ["./src/orbit/satellite-core.ts"],
+      "satellite.js/dist/*": ["./node_modules/satellite.js/dist/*"]
+    },
     "noEmit": true,
     "types": ["vitest/globals"]
   },

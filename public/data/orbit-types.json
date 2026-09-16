@@ -1,0 +1,76 @@
+{
+  "types": [
+    {
+      "key": "equatorial",
+      "zh": "赤道低轨",
+      "en": "Equatorial LEO",
+      "color": "#f9c74f",
+      "descZh": "倾角接近 0° 的低轨道，卫星几乎贴着赤道面飞行，把整个地球的赤道带都看在眼里。适合热带观测与低纬度覆盖。",
+      "descEn": "A low orbit with near-zero inclination. The satellite hugs the equatorial plane, ideal for tropical observations and low-latitude coverage."
+    },
+    {
+      "key": "polar",
+      "zh": "极轨",
+      "en": "Polar Orbit",
+      "color": "#4cc9f0",
+      "descZh": "倾角约 90° 的轨道，每圈都飞越南北两极。随着地球自转，卫星能扫过全球每一片土地，是测绘与冰盖监测的常用选择。",
+      "descEn": "An orbit inclined about 90°, passing over both poles each revolution. Earth's rotation lets it sweep the entire globe, a favourite for mapping and ice monitoring."
+    },
+    {
+      "key": "sso",
+      "zh": "太阳同步",
+      "en": "Sun-Synchronous",
+      "color": "#8ce99a",
+      "descZh": "倾角约 98° 的逆行轨道，轨道面随太阳同步转动，卫星每天都在同一地方时经过同一地区，光照条件稳定，是光学遥感首选。",
+      "descEn": "A slightly retrograde orbit near 98° whose plane precesses with the Sun, so the satellite crosses each place at the same local time every day with stable lighting."
+    },
+    {
+      "key": "leo",
+      "zh": "低地球轨道",
+      "en": "Low Earth Orbit",
+      "color": "#7fb3ff",
+      "descZh": "高度 200–2000 km 的轨道，约 90 分钟绕地球一圈，一天能看十几圈。国际空间站和大多数遥感卫星都在这里。",
+      "descEn": "Orbits between 200 and 2000 km, circling Earth roughly every 90 minutes. The ISS and most imaging satellites live here."
+    },
+    {
+      "key": "meo",
+      "zh": "中地球轨道",
+      "en": "Medium Earth Orbit",
+      "color": "#b388ff",
+      "descZh": "周期约 12 小时、高度约 20000 km 的轨道。GPS、北斗、伽利略、格洛纳斯等导航星座都在这个高度俯瞰地球。",
+      "descEn": "Orbits with a period near 12 hours at about 20000 km altitude, home to the GPS, BeiDou, Galileo and GLONASS navigation constellations."
+    },
+    {
+      "key": "igso",
+      "zh": "倾斜同步轨道",
+      "en": "Inclined Geosynchronous",
+      "color": "#ffa552",
+      "descZh": "周期与地球自转相同的倾斜轨道，卫星在地面上空画出「8」字，长期驻留在同一片区域上空，导航增强常用。",
+      "descEn": "A 24-hour orbit with a tilted plane. The satellite traces a figure eight over the ground and lingers over one region, often used for navigation augmentation."
+    },
+    {
+      "key": "geo",
+      "zh": "地球静止轨道",
+      "en": "Geostationary Orbit",
+      "color": "#ff6ea9",
+      "descZh": "高度约 35786 km、倾角为 0 的圆轨道，周期恰为 24 小时，从地面看卫星固定在天上的一个点，适合通信与气象观测。",
+      "descEn": "A circular orbit at about 35786 km with zero inclination. Its 24-hour period makes the satellite appear fixed in the sky — ideal for communication and weather watching."
+    },
+    {
+      "key": "heo",
+      "zh": "大椭圆轨道",
+      "en": "Highly Elliptical Orbit",
+      "color": "#ef476f",
+      "descZh": "偏心率很大的椭圆轨道，近地点低、远地点高。卫星在远地点附近移动极慢，可以长时间停留高纬度地区上空，俄罗斯的子午线、北极系列即是此例。",
+      "descEn": "A stretched ellipse with a low perigee and a very high apogee. The satellite crawls near apogee, lingering over high latitudes — the classic Molniya trick."
+    },
+    {
+      "key": "retrograde",
+      "zh": "逆行轨道",
+      "en": "Retrograde Orbit",
+      "color": "#00e5c0",
+      "descZh": "倾角大于 90° 的轨道，卫星公转方向与地球自转相反，相对地面速度更快，常用于对特定区域的高频重访。",
+      "descEn": "An orbit inclined beyond 90°, travelling against Earth's rotation. The higher ground speed enables frequent revisits of specific regions."
+    }
+  ]
+}
