@@ -295,6 +295,17 @@ body {
   animation: city-pulse 1.15s ease-out infinite;
 }
 
+/* 刚被光锥掠过（还没进拍摄范围）：淡一点的暖色，不带脉冲，和"正被拍到"区分开 */
+.city-label.is-swept {
+  color: #ffcf8a;
+  font-weight: 600;
+}
+
+.city-label.is-swept .city-dot {
+  background: rgba(255, 202, 138, 0.9);
+  box-shadow: 0 0 9px rgba(255, 190, 110, 0.75);
+}
+
 @keyframes city-pulse {
   0% {
     transform: scale(1);

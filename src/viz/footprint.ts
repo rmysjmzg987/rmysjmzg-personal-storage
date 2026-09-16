@@ -223,16 +223,22 @@ export function createFootprint(): FootprintHandle {
       const { u: basisU, v: basisV } = orthonormalBasis(axis);
       const surfaceRadius = EARTH_RADIUS_KM * SURFACE_OFFSET;
 
-      const nadirGroundX = nadir.x * surfaceRadius;
-      const nadirGroundY = nadir.y * surfaceRadius;
-      const nadirGroundZ = nadir.z * surfaceRadius;
-      const nadirGroundEci = rotateZ({ x: nadirGroundX, y: nadirGroundY, z: nadirGroundZ }, gmstRad);
+      // 星下点：卫星位置在球面上的投影。注意它与 nadir 反号（nadir 指向地心），
+      // 这里必须是星下点本身，扇形中心与城市掠过判定都依赖它。
+      const subPointEcef = normalize(ecef);
+      const nadirGroundEci = rotateZ(
+        {
+          x: subPointEcef.x * surfaceRadius,
+          y: subPointEcef.y * surfaceRadius,
+          z: subPointEcef.z * surfaceRadius,
+        },
+        gmstRad,
+      );
       fanPositions[0] = nadirGroundEci.x;
       fanPositions[1] = nadirGroundEci.y;
       fanPositions[2] = nadirGroundEci.z;
 
-      const subPoint = rotateZ(nadir, gmstRad);
-      nadirUnit = subPoint;
+      nadirUnit = rotateZ(subPointEcef, gmstRad);
 
       for (let i = 0; i < RING_SEGMENTS; i += 1) {
         const azimuth = (i / RING_SEGMENTS) * Math.PI * 2;

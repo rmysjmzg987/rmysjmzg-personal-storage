@@ -30,7 +30,6 @@ if (cacheDirs.length === 0) {
 
 const wanted = [...PRESET, ...LIBRARY].map((entry) => ({ ...entry, norad: entry.norad }));
 const wantedIds = new Set(wanted.map((e) => e.norad));
-const metaById = new Map(wanted.map((e) => [e.norad, e]));
 
 function parseTleBlocks(text) {
   const lines = text.split(/\r?\n/);

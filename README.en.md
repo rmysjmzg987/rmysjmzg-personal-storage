@@ -8,7 +8,7 @@ A self-contained, front-end-only 3D satellite orbit visualiser. It uses real TLE
 
 - **Real orbits**: 18 preset satellites covering nine orbit classes — equatorial LEO, polar, Sun-synchronous, low Earth, medium Earth, inclined geosynchronous, geostationary, highly elliptical (Molniya) and retrograde.
 - **Click to lock on**: click a satellite dot, or just its orbit line, and the camera flies in to a "satellite above, Earth below" framing; release to return to the global view.
-- **Sensor footprint**: a field-of-view cone plus a ground coverage ring follows the satellite; city labels swept by the cone turn gold and pulse.
+- **Sensor footprint**: a field-of-view cone plus a ground coverage ring follows the satellite; cities inside the shot turn gold and pulse, and cities the cone has just swept past keep a warm afterglow.
 - **Detail card**: orbit type (with hover explanation), live altitude, speed, period, inclination, eccentricity, sub-satellite point, field of view and a short description.
 - **Orbit-type cheat sheet**: hover the ⓘ next to the orbit type for a plain-language explanation; the card freezes its refresh while the pointer is over it, so the numbers stay put.
 - **Two lock framings**: press `V`, or use the "View" button on the detail card, to switch between the nadir shot (camera on the satellite's local zenith) and a level side shot centred on the sensor cone's mid-point — handy for polar and geostationary satellites alike.
@@ -90,6 +90,7 @@ Implementation notes:
 
 - TLE data ages: positions drift as the snapshot gets older; the page does not fetch updates at runtime.
 - The footprint is a circular approximation — no off-nadir steering, scan strips or real sensor swath.
+- City highlighting has two tiers: gold pulse means the city is inside the geometric coverage circle (widened 1.6x so edge cities do not flicker), while the warm afterglow marks cities the widened "sweep circle" has just passed. That sweep circle has a floor of 8 degrees (about 890 km), otherwise a narrow-swath satellite such as Landsat (15 degrees) would barely touch a handful of cities per day. The afterglow lasts 150 seconds of simulated time, so it stays readable while fast-forwarding. Only 102 cities are built in, so small towns are missed when the decision radius and city density do not line up.
 - Texture resolution is finite (8192x4096 from NASA imagery), so the ground still softens at ground-hugging zoom; run `npm run fetch:textures` (or drop in your own files) to replace the two images in `public/textures/` — the fetch script pulls the 21600x10800 NASA master, which is much larger than the downscaled copy shipped in the repo.
 
 ## License

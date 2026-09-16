@@ -1,12 +1,14 @@
 import { describe, it, expect } from 'vitest';
+import * as THREE from 'three';
 import {
   coneRayDirection,
+  createFootprint,
   footprintAngularRadius,
   footprintGroundPoint,
   orthonormalBasis,
 } from '../src/viz/footprint';
 import { isCityWithin } from '../src/ui/cityLabels';
-import { EARTH_RADIUS_KM, geodeticToEcef } from '../src/core/frames';
+import { EARTH_RADIUS_KM, eciToEcef, geodeticToEcef, rotateZ } from '../src/core/frames';
 
 const DEG = Math.PI / 180;
 
@@ -80,6 +82,37 @@ describe('footprint ground ring', () => {
 });
 
 describe('city coverage test', () => {
+  it('places the fan centre and nadir unit at the sub-satellite point, not its antipode', () => {
+    const footprint = createFootprint();
+    const gmst = 0.7;
+    const position = { x: EARTH_RADIUS_KM + 420, y: 1200, z: 900 };
+    footprint.update({ satelliteEci: position, gmstRad: gmst, fovDeg: 40 });
+
+    const ecef = eciToEcef(position, gmst);
+    const radius = Math.hypot(ecef.x, ecef.y, ecef.z);
+    const expected = rotateZ(
+      { x: ecef.x / radius, y: ecef.y / radius, z: ecef.z / radius },
+      gmst,
+    );
+
+    const nadirUnit = footprint.nadirUnitEci();
+    expect(nadirUnit).not.toBeNull();
+    expect(nadirUnit!.x).toBeCloseTo(expected.x, 9);
+    expect(nadirUnit!.y).toBeCloseTo(expected.y, 9);
+    expect(nadirUnit!.z).toBeCloseTo(expected.z, 9);
+
+    const fanGeometry = (footprint.group.children[0] as THREE.Mesh).geometry as THREE.BufferGeometry;
+    const fanPositions = fanGeometry.getAttribute('position') as THREE.BufferAttribute;
+    const centre = { x: fanPositions.getX(0), y: fanPositions.getY(0), z: fanPositions.getZ(0) };
+    const centreRadius = Math.hypot(centre.x, centre.y, centre.z);
+    expect(centreRadius).toBeGreaterThan(EARTH_RADIUS_KM);
+    expect(centre.x / centreRadius).toBeCloseTo(expected.x, 6);
+    expect(centre.y / centreRadius).toBeCloseTo(expected.y, 6);
+    expect(centre.z / centreRadius).toBeCloseTo(expected.z, 6);
+
+    footprint.dispose();
+  });
+
   it('detects a city inside the highlighted circle', () => {
     const beijing = geodeticToEcef(39.904, 116.407);
     const length = Math.hypot(beijing.x, beijing.y, beijing.z);

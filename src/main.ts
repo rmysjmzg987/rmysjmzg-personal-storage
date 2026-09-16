@@ -35,7 +35,15 @@ import {
 import { mountAddSatellite, type AddSatelliteEntry } from './ui/addSatellite';
 import { createSatelliteScene, type SatelliteSceneHandle } from './viz/satelliteScene';
 import { createFootprint } from './viz/footprint';
-import { createCityLabels, cityKey, isCityWithin, type CityLabelHandle } from './ui/cityLabels';
+import {
+  createCityLabels,
+  cityKey,
+  isCityWithin,
+  cityHighlightRadius,
+  cityPassRadius,
+  createSweepMemory,
+  type CityLabelHandle,
+} from './ui/cityLabels';
 import { mountHud, type HudState, type LayerKey } from './ui/hud';
 import { mountDetail, type DetailView } from './ui/detail';
 import { mountSearchBar } from './ui/searchBar';
@@ -43,8 +51,6 @@ import { t, type Lang } from './ui/i18n';
 
 const FALLBACK_SNAPSHOT = '2026-09-16';
 const HEO_PERIGEE = 0.25;
-/** 城市高亮判定比真实覆盖圈略宽，光锥"掠过"时就能看到变色效果 */
-const CITY_HIGHLIGHT_MARGIN = 1.6;
 
 function formatDegrees(value: number, positive: string, negative: string): string {
   const hemisphere = value >= 0 ? positive : negative;
@@ -132,6 +138,10 @@ async function bootstrap(): Promise<void> {
   let cityLabels: CityLabelHandle | null = null;
   let cityUnits: { key: string; unit: { x: number; y: number; z: number } }[] = [];
   const coveredCities = new Set<string>();
+  const sweepMemory = createSweepMemory();
+  const sweptScratch: string[] = [];
+  const emptySwept = new Set<string>();
+  let sweptCities: Set<string> = emptySwept;
 
   const recordById = (id: string | null) => (id ? records.find((record) => record.id === id) ?? null : null);
   const selectedRecord = () => recordById(state.selectedId);
@@ -660,6 +670,7 @@ async function bootstrap(): Promise<void> {
       }
 
       const footprintRecord = state.selectedId ? selected : recordById(state.hoveredId);
+      sweptCities = emptySwept;
       if (state.layers.footprint && footprintRecord) {
         const position = satelliteScene.positionOf(footprintRecord.id);
         if (position) {
@@ -669,20 +680,30 @@ async function bootstrap(): Promise<void> {
           const nadir = footprint.nadirUnitEci();
           const coverage = footprint.coverageAngleRad();
           if (nadir && coverage > 0) {
-            const highlight = coverage * CITY_HIGHLIGHT_MARGIN;
+            const highlight = cityHighlightRadius(coverage);
+            const pass = cityPassRadius(coverage);
+            sweptScratch.length = 0;
             for (const city of cityUnits) {
-              if (isCityWithin(rotateZ(city.unit, gmstRad), nadir, highlight)) {
+              const eci = rotateZ(city.unit, gmstRad);
+              const inShot = isCityWithin(eci, nadir, highlight);
+              if (inShot) {
                 coveredCities.add(city.key);
               }
+              // 掠过圈比拍摄范围大：这一带刚被光锥扫过就留下暖色余辉
+              if (inShot || isCityWithin(eci, nadir, pass)) sweptScratch.push(city.key);
             }
+            sweepMemory.record(sweptScratch, simTime.getTime());
+            sweptCities = sweepMemory.active(simTime.getTime());
           }
         } else {
           footprint.setVisible(false);
           coveredCities.clear();
+          sweepMemory.clear();
         }
       } else {
         footprint.setVisible(false);
         coveredCities.clear();
+        sweepMemory.clear();
       }
 
       cityLabels?.update({
@@ -692,6 +713,7 @@ async function bootstrap(): Promise<void> {
         gmstRad,
         lang: state.lang,
         covered: coveredCities,
+        swept: sweptCities,
         footprintActive: footprint.group.visible,
       });
 
@@ -724,6 +746,7 @@ async function bootstrap(): Promise<void> {
         `fov=${ctx.camera.fov.toFixed(1)}`,
         `footprint=${footprint.group.visible ? 'on' : 'off'}`,
         `cities=${coveredCities.size}`,
+        `swept=${sweptCities.size}`,
       ].join('\n');
     }
 
