@@ -70,7 +70,9 @@ async function loadTexture(
     loader.load(
       url,
       (texture) => {
-        texture.anisotropy = 4;
+        texture.anisotropy = 8;
+        texture.generateMipmaps = true;
+        texture.minFilter = THREE.LinearMipmapLinearFilter;
         resolve({ texture, fromFile: true });
       },
       undefined,
@@ -108,6 +110,9 @@ export async function createEarth(opts: {
       fragmentShader: EARTH_FRAGMENT,
     }),
   );
+  // 等距圆柱贴图的球体默认以 +y 为极轴，而卫星/城市/太阳都用 +z 作极轴。
+  // 这里把球体绕 x 轴转 90°，让贴图与 ECI 坐标系（含经纬网格）严格对齐。
+  earth.rotation.x = Math.PI / 2;
 
   const atmosphere = new THREE.Mesh(
     new THREE.SphereGeometry(EARTH_RADIUS_KM * 1.02, 96, 64),
@@ -128,7 +133,7 @@ export async function createEarth(opts: {
   return {
     group,
     update({ gmstRad, sunDirEci, atmosphere: showAtmosphere }) {
-      group.rotation.y = gmstRad;
+      group.rotation.z = gmstRad;
       atmosphere.visible = showAtmosphere;
       (uniforms.sunDir.value as THREE.Vector3).set(sunDirEci.x, sunDirEci.y, sunDirEci.z);
     },

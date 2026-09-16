@@ -13,7 +13,15 @@ import {
   type SatellitePointsHandle,
   type SelectionHalo,
 } from './satellitePoints';
-import { isOccludedByEarth, projectSample, pickNearest, type ScreenSample } from './picking';
+import {
+  isOccludedByEarth,
+  projectSample,
+  pickNearest,
+  pickNearestPolyline,
+  type ScreenPoint,
+  type ScreenPolyline,
+  type ScreenSample,
+} from './picking';
 
 const BASE_SIZE = 420;
 const HOVER_SIZE = 560;
@@ -37,9 +45,12 @@ export interface SatelliteSceneHandle {
   setRecords(records: SatelliteRecord[]): void;
   setSelected(id: string | null, immediate?: boolean): void;
   setHovered(id: string | null): void;
+  setHoveredOrbit(id: string | null): void;
   setOrbitLinesVisible(visible: boolean): void;
   setPointScale(scale: number, minPixels?: number, maxPixels?: number): void;
   pick(pointerX: number, pointerY: number, maxPixels?: number): string | null;
+  /** 轨道线拾取：点击/悬停线条即视为选中该卫星 */
+  pickOrbit(pointerX: number, pointerY: number, maxPixels?: number): string | null;
   positionOf(id: string): { x: number; y: number; z: number } | null;
   samples(): ScreenSample[];
   setResolution(width: number, height: number): void;
@@ -64,8 +75,12 @@ export function createSatelliteScene(records: SatelliteRecord[]): SatelliteScene
   let lastQueueRealMs = 0;
   let selectedId: string | null = null;
   let hoveredId: string | null = null;
+  let hoveredOrbitId: string | null = null;
   let screenSamples: ScreenSample[] = [];
   let orbitsVisible = true;
+  let pickCamera: THREE.PerspectiveCamera | null = null;
+  let pickWidth = 0;
+  let pickHeight = 0;
   const colorCache = new Map<string, THREE.Color>();
   const tmpCameraTarget = new THREE.Vector3();
 
@@ -137,6 +152,43 @@ export function createSatelliteScene(records: SatelliteRecord[]): SatelliteScene
     return pickNearest(screenSamples, pointerX, pointerY, maxPixels);
   }
 
+  /** 把已构建的轨道线投影到屏幕空间，交给纯函数做最近折线判定 */
+  function pickOrbit(pointerX: number, pointerY: number, maxPixels = 12): string | null {
+    if (!orbitsVisible || !pickCamera || pickWidth <= 0 || pickHeight <= 0) return null;
+    const camera = pickCamera;
+    const cameraPosition = camera.position;
+    const polylines: ScreenPolyline[] = [];
+    for (const [id, entry] of lines) {
+      if (!entry.handle.line.visible) continue;
+      const raw = entry.handle.positions;
+      if (raw.length < 6) continue;
+      const points: ScreenPoint[] = [];
+      for (let i = 0; i + 2 < raw.length; i += 3) {
+        const sample = projectSample(
+          camera,
+          { x: raw[i], y: raw[i + 1], z: raw[i + 2] },
+          pickWidth,
+          pickHeight,
+        );
+        if (!sample) {
+          points.push({ x: 0, y: 0, visible: false });
+          continue;
+        }
+        points.push({
+          x: sample.x,
+          y: sample.y,
+          visible: !isOccludedByEarth(cameraPosition, {
+            x: raw[i],
+            y: raw[i + 1],
+            z: raw[i + 2],
+          }),
+        });
+      }
+      polylines.push({ id, points });
+    }
+    return pickNearestPolyline(polylines, pointerX, pointerY, maxPixels);
+  }
+
   function positionOfId(id: string): { x: number; y: number; z: number } | null {
     const index = indexById.get(id);
     if (index === undefined) return null;
@@ -161,6 +213,14 @@ export function createSatelliteScene(records: SatelliteRecord[]): SatelliteScene
     setHovered(id) {
       hoveredId = id;
     },
+    setHoveredOrbit(id) {
+      if (hoveredOrbitId === id) return;
+      const previous = hoveredOrbitId ? lines.get(hoveredOrbitId) : undefined;
+      previous?.handle.setHovered(false);
+      hoveredOrbitId = id;
+      const next = id ? lines.get(id) : undefined;
+      next?.handle.setHovered(true);
+    },
     setOrbitLinesVisible(visible) {
       orbitsVisible = visible;
       for (const entry of lines.values()) entry.handle.line.visible = visible;
@@ -169,6 +229,7 @@ export function createSatelliteScene(records: SatelliteRecord[]): SatelliteScene
       points.setScale(scale, minPixels, maxPixels);
     },
     pick,
+    pickOrbit,
     positionOf: positionOfId,
     samples: () => screenSamples,
     visibleCount: () => {
@@ -179,6 +240,9 @@ export function createSatelliteScene(records: SatelliteRecord[]): SatelliteScene
     update(simTime, camera, width, height, realDeltaMs) {
       const nowMs = performance.now();
       screenSamples = [];
+      pickCamera = camera;
+      pickWidth = width;
+      pickHeight = height;
 
       for (let i = 0; i < currentRecords.length; i += 1) {
         const record = currentRecords[i];
@@ -266,6 +330,7 @@ export function createSatelliteScene(records: SatelliteRecord[]): SatelliteScene
         const entry = lines.get(record.id)!;
         rebuildLine(record, simTime, entry);
         handle.setSelected(record.id === selectedId);
+        handle.setHovered(record.id === hoveredOrbitId);
         built += 1;
       }
 

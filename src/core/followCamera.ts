@@ -25,9 +25,75 @@ export interface FollowController {
 
 const BASE_FOV = 50;
 const LOCK_FOV = 43.5;
+/** 地球自转轴：锁定期间以它作为"画面朝北"的基准 */
+export const SPIN_AXIS = new THREE.Vector3(0, 0, 1);
+/** 跟随状态下画面滚转的最大角速度（弧度/秒），越大越快回正 */
+const FOLLOW_ROLL_RATE = 0.8;
+/** 过渡状态下允许的滚转角速度，明显更快，避免过渡结束时画面还是歪的 */
+const TRANSITION_ROLL_RATE = 3.2;
+/** 北向分量小于该值时视为极区，退化为平行传输（画面不翻滚） */
+const NORTH_SOLID_LIMIT = 0.08;
+/** 过渡期间放宽距离限制，防止 OrbitControls 中途夹紧半径造成跳变 */
+const LOOSE_MIN_DISTANCE = 40;
+const LOOSE_MAX_DISTANCE = 4_000_000;
 
 function easeInOutCubic(t: number): number {
   return t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
+}
+
+const _north = new THREE.Vector3();
+const _cross = new THREE.Vector3();
+
+/**
+ * 把视线方向从 up 中去掉，让 up 始终垂直于视线。返回投影后的长度。
+ */
+export function orthogonalizeUp(up: THREE.Vector3, viewDir: THREE.Vector3): number {
+  up.addScaledVector(viewDir, -up.dot(viewDir));
+  return up.length();
+}
+
+/**
+ * 计算锁定跟随时画面的"朝上"方向。
+ *
+ * - 常规情况：把地球自转轴投影到垂直于视线的平面上（画面里"北"朝上），
+ *   并按最大角速度逐步靠拢，避免画面突然翻转。
+ * - 极区（视线几乎与自转轴平行，例如卫星正好掠过极点）：投影长度趋近 0，
+ *   此时只保留上一帧的滚转（平行传输），画面平滑掠过，不会像 OrbitControls
+ *   那样在极点附近卡死或打转。
+ *
+ * up 会被就地修改，函数结束后保证 up ⟂ viewDir 且为单位向量。
+ */
+export function stabilizeFrameUp(
+  up: THREE.Vector3,
+  viewDir: THREE.Vector3,
+  dtSeconds: number,
+  maxRollRateRad: number,
+): void {
+  if (orthogonalizeUp(up, viewDir) < 1e-4) {
+    // up 与视线几乎平行：用自转轴重开，仍不行则退回世界 +y
+    up.copy(SPIN_AXIS);
+    if (orthogonalizeUp(up, viewDir) < 1e-4) {
+      up.set(0, 1, 0);
+      orthogonalizeUp(up, viewDir);
+    }
+    if (up.lengthSq() < 1e-12) up.set(1, 0, 0);
+  }
+  up.normalize();
+
+  _north.set(0, 0, 1).addScaledVector(viewDir, -viewDir.z);
+  const northLength = _north.length();
+  if (northLength < NORTH_SOLID_LIMIT) return;
+  _north.divideScalar(northLength);
+
+  // 绕视线方向滚转：夹角用带符号角，保证转向最短方向
+  _cross.crossVectors(up, _north);
+  const delta = Math.atan2(_cross.dot(viewDir), up.dot(_north));
+  if (Math.abs(delta) < 1e-4) return;
+  const maxStep = Math.max(0, maxRollRateRad) * Math.max(0, dtSeconds);
+  const step = Math.max(-maxStep, Math.min(maxStep, delta));
+  up.applyAxisAngle(viewDir, step);
+  orthogonalizeUp(up, viewDir);
+  up.normalize();
 }
 
 export function createFollowController(options: FollowControllerOptions): FollowController {
@@ -39,13 +105,17 @@ export function createFollowController(options: FollowControllerOptions): Follow
   let desiredDistanceKm = 3000;
   let transitionStart = 0;
   let transitioning = false;
-  let fromCamera = new THREE.Vector3();
   let fromTarget = new THREE.Vector3();
+  let fromDirection = new THREE.Vector3(0, 0, 1);
   let filtered = new THREE.Vector3();
   let previousFiltered = new THREE.Vector3();
   let direction = new THREE.Vector3(0, 0, 1);
   let fromDistance = 0;
   let adaptive = false;
+  const frameUp = new THREE.Vector3(0, 1, 0);
+  const nextTarget = new THREE.Vector3();
+  const scratchDir = new THREE.Vector3();
+  const scratchView = new THREE.Vector3();
 
   const applyDistanceLimits = () => {
     controls.minDistance = Math.max(120, desiredDistanceKm * 0.08);
@@ -56,27 +126,26 @@ export function createFollowController(options: FollowControllerOptions): Follow
     lock(id, target, desiredDistance) {
       activeId = id;
       desiredDistanceKm = Math.max(400, desiredDistance);
-      applyDistanceLimits();
-      fromCamera.copy(camera.position);
+      // 过渡期间先放宽限制，等镜头就位再收紧，避免中途被夹紧半径
+      controls.minDistance = LOOSE_MIN_DISTANCE;
+      controls.maxDistance = LOOSE_MAX_DISTANCE;
       fromTarget.copy(controls.target);
-      // 跟随视角：以目标"本地天顶方向"为主、当前接近方向为辅，
-      // 这样相机始终从上方俯视（而不是贴着地平线擦过），地面与拍摄范围都在画面里。
+      // 跟随视角：相机位于卫星正上方（本地天顶方向），画面里卫星在上、地球在下
       const localUp = new THREE.Vector3(target.x, target.y, target.z);
       if (localUp.lengthSq() < 1e-6) localUp.set(0, 0, 1);
       localUp.normalize();
-      const approach = new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z)
-        .sub(new THREE.Vector3(target.x, target.y, target.z));
-      if (approach.lengthSq() < 1e-6) approach.copy(localUp);
-      approach.normalize();
-      direction.copy(localUp).multiplyScalar(0.72).addScaledVector(approach, 0.28);
-      if (direction.lengthSq() < 1e-6) direction.copy(localUp);
-      direction.normalize();
-      // 至少保留 45° 俯角，避免出现"贴地平线"的取景
-      if (direction.dot(localUp) < 0.7071) {
-        direction.copy(localUp).multiplyScalar(0.75).addScaledVector(approach, 0.25).normalize();
+      direction.copy(localUp);
+      // 记录起点：相对目标的球面方向 + 距离，过渡时沿球面绕过去而不是穿地球
+      scratchDir.copy(camera.position).sub(controls.target);
+      const currentDistance = scratchDir.length();
+      if (currentDistance > 1e-3) {
+        fromDirection.copy(scratchDir).divideScalar(currentDistance);
+      } else {
+        fromDirection.copy(localUp);
       }
-      const currentTargetDistance = camera.position.distanceTo(controls.target);
-      fromDistance = Math.max(fromDistance, currentTargetDistance);
+      fromDistance = currentDistance > 1e-3 ? currentDistance : desiredDistanceKm;
+      frameUp.copy(camera.up);
+      if (frameUp.lengthSq() < 1e-8) frameUp.set(0, 1, 0);
       filtered.set(target.x, target.y, target.z);
       previousFiltered.copy(filtered);
       transitionStart = performance.now();
@@ -89,6 +158,7 @@ export function createFollowController(options: FollowControllerOptions): Follow
       controls.enabled = true;
       controls.minDistance = 6600;
       controls.maxDistance = 300000;
+      camera.up.set(0, 1, 0);
       camera.fov = BASE_FOV;
       camera.updateProjectionMatrix();
     },
@@ -112,16 +182,24 @@ export function createFollowController(options: FollowControllerOptions): Follow
         const elapsed = performance.now() - transitionStart;
         const t = Math.min(1, elapsed / transitionMs);
         const eased = easeInOutCubic(t);
-        const endDistance = desiredDistanceKm;
-        const distance = fromDistance + (endDistance - fromDistance) * eased;
-        const desiredCamera = filtered.clone().addScaledVector(direction, distance);
-        const desiredTarget = filtered.clone();
-        camera.position.lerpVectors(fromCamera, desiredCamera, eased);
-        controls.target.lerpVectors(fromTarget, desiredTarget, eased);
+        const distance = fromDistance + (desiredDistanceKm - fromDistance) * eased;
+        nextTarget.lerpVectors(fromTarget, filtered, eased);
+        scratchDir.copy(fromDirection).lerp(direction, eased);
+        if (scratchDir.lengthSq() < 1e-8) scratchDir.copy(direction);
+        scratchDir.normalize();
+        controls.target.copy(nextTarget);
+        camera.position.copy(nextTarget).addScaledVector(scratchDir, distance);
+        scratchView.copy(controls.target).sub(camera.position);
+        if (scratchView.lengthSq() > 1e-8) {
+          scratchView.normalize();
+          stabilizeFrameUp(frameUp, scratchView, dt, TRANSITION_ROLL_RATE);
+          camera.up.copy(frameUp);
+        }
         camera.fov = BASE_FOV + (LOCK_FOV - BASE_FOV) * Math.sin(Math.PI * eased);
         camera.updateProjectionMatrix();
         if (t >= 1) {
           transitioning = false;
+          applyDistanceLimits();
           controls.enabled = true;
           camera.fov = LOCK_FOV;
           camera.updateProjectionMatrix();
@@ -134,6 +212,14 @@ export function createFollowController(options: FollowControllerOptions): Follow
       camera.position.add(delta);
       controls.target.copy(filtered);
       previousFiltered.copy(filtered);
+
+      // 视线方向：相机 → 卫星。据此挑选画面朝上方向，绕开 ±y 极点奇异
+      scratchView.copy(controls.target).sub(camera.position);
+      if (scratchView.lengthSq() > 1e-8) {
+        scratchView.normalize();
+        stabilizeFrameUp(frameUp, scratchView, dt, FOLLOW_ROLL_RATE);
+        camera.up.copy(frameUp);
+      }
 
       // 大椭圆轨道：随卫星高度平滑调整取景距离，近地点不穿模、远地点不丢目标
       if (adaptive) {

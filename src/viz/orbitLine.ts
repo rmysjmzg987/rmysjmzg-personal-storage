@@ -6,6 +6,7 @@ import type { Propagator } from '../orbit/types';
 
 export interface OrbitMaterials {
   normal: LineMaterial;
+  hovered: LineMaterial;
   selected: LineMaterial;
   setResolution(width: number, height: number): void;
   dispose(): void;
@@ -21,16 +22,20 @@ export function createOrbitMaterials(): OrbitMaterials {
     resolution: new THREE.Vector2(window.innerWidth, window.innerHeight),
   };
   const normal = new LineMaterial({ ...common, linewidth: 1.4, opacity: 0.5 });
+  const hovered = new LineMaterial({ ...common, linewidth: 2.4, opacity: 0.85 });
   const selected = new LineMaterial({ ...common, linewidth: 3.4, opacity: 1 });
   return {
     normal,
+    hovered,
     selected,
     setResolution(width, height) {
       normal.resolution.set(width, height);
+      hovered.resolution.set(width, height);
       selected.resolution.set(width, height);
     },
     dispose() {
       normal.dispose();
+      hovered.dispose();
       selected.dispose();
     },
   };
@@ -39,7 +44,10 @@ export function createOrbitMaterials(): OrbitMaterials {
 export interface OrbitLineHandle {
   line: Line2;
   geometry: LineGeometry;
+  /** 最近一次写入的轨道采样点（世界坐标，用于屏幕空间拾取） */
+  positions: Float32Array;
   setSelected(selected: boolean): void;
+  setHovered(hovered: boolean): void;
   update(points: Float32Array): void;
   dispose(): void;
 }
@@ -62,13 +70,22 @@ export function createOrbitLine(colorHex: string, materials: OrbitMaterials): Or
   const line = new Line2(geometry, materials.normal);
   line.frustumCulled = false;
   line.renderOrder = 1;
-  return {
+  let selected = false;
+  let hovered = false;
+  const handle: OrbitLineHandle = {
     line,
     geometry,
-    setSelected(selected) {
-      line.material = selected ? materials.selected : materials.normal;
+    positions: new Float32Array(0),
+    setSelected(next) {
+      selected = next;
+      applyMaterial();
+    },
+    setHovered(next) {
+      hovered = next;
+      applyMaterial();
     },
     update(points) {
+      handle.positions = points;
       geometry.setPositions(points);
       line.computeLineDistances();
       const vertexCount = points.length / 3;
@@ -84,6 +101,10 @@ export function createOrbitLine(colorHex: string, materials: OrbitMaterials): Or
       geometry.dispose();
     },
   };
+  function applyMaterial(): void {
+    line.material = selected ? materials.selected : hovered ? materials.hovered : materials.normal;
+  }
+  return handle;
 }
 
 /**

@@ -409,11 +409,14 @@ async function bootstrap(): Promise<void> {
 
   function updateHover(): void {
     if (!satelliteScene) return;
-    const id = satelliteScene.pick(pointer.x, pointer.y, 24);
+    // 先找卫星点，找不到再找轨道线：高轨道卫星点太小，靠线条也能选
+    const pointId = satelliteScene.pick(pointer.x, pointer.y, 24);
+    const id = pointId ?? satelliteScene.pickOrbit(pointer.x, pointer.y, 10);
     if (id !== state.hoveredId) {
       state.hoveredId = id;
       satelliteScene.setHovered(id);
     }
+    satelliteScene.setHoveredOrbit(pointId ? null : id);
     canvas!.classList.toggle('is-hovering-satellite', Boolean(id));
     const record = recordById(id);
     if (!record) {
@@ -430,9 +433,10 @@ async function bootstrap(): Promise<void> {
     const nameEl = tooltip.querySelector<HTMLElement>('.name')!;
     const metaEl = tooltip.querySelector<HTMLElement>('.meta')!;
     nameEl.textContent = displayName(record, state.lang);
+    const hint = pointId ? '' : state.lang === 'zh' ? ' · 点击锁定' : ' · click to lock';
     metaEl.textContent = `${altitude === null ? '—' : altitude.toFixed(0)} km · ${
       type ? (state.lang === 'zh' ? type.zh : type.en) : ''
-    }`;
+    }${hint}`;
   }
 
   canvas.addEventListener('pointermove', (event) => {
@@ -445,6 +449,7 @@ async function bootstrap(): Promise<void> {
   });
   canvas.addEventListener('pointerleave', () => {
     tooltip.hidden = true;
+    satelliteScene?.setHoveredOrbit(null);
   });
   canvas.addEventListener('pointerdown', (event) => {
     pointer.down = true;
@@ -456,7 +461,10 @@ async function bootstrap(): Promise<void> {
     const wasDown = pointer.down;
     pointer.down = false;
     if (!wasDown || pointer.moved || !satelliteScene) return;
-    const id = satelliteScene.pick(event.clientX, event.clientY, 24);
+    // 卫星点优先；点不到点上时退化为点击轨道线（高轨/远端卫星点非常小）
+    const id =
+      satelliteScene.pick(event.clientX, event.clientY, 24) ??
+      satelliteScene.pickOrbit(event.clientX, event.clientY, 12);
     const record = recordById(id);
     if (record) {
       lockOn(record);

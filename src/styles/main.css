@@ -229,6 +229,16 @@ body {
   position: absolute;
   inset: 0;
   overflow: hidden;
+  /* 城市标签按视口顺序挂载在 HUD 面板之后，必须显式压低，否则会盖住详情卡与底栏 */
+  z-index: 1;
+}
+
+/* HUD 面板统一压在三维舞台与城市标签之上 */
+.hud-top,
+.hud-bottom,
+.hud-note,
+.hud-follow {
+  z-index: 20;
 }
 
 .city-label {
@@ -295,6 +305,7 @@ body {
   position: absolute;
   top: 74px;
   right: 18px;
+  z-index: 20;
   width: 288px;
   background: var(--hud-bg-strong);
   border: 1px solid var(--hud-border);
@@ -392,7 +403,6 @@ body {
 
 .info-icon {
   pointer-events: auto;
-  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -413,9 +423,10 @@ body {
 }
 
 .info-tip {
+  /* 以详情卡为定位基准（.info-icon 故意不设 position），整块浮在卡片左侧，不遮挡任何数值 */
   position: absolute;
-  right: -6px;
-  top: 24px;
+  right: calc(100% + 12px);
+  top: 12px;
   width: 246px;
   padding: 10px 12px;
   background: rgba(8, 13, 24, 0.94);
@@ -442,6 +453,10 @@ body {
   display: block;
   margin-bottom: 4px;
   color: #ffffff;
+}
+
+.info-tip-body {
+  display: block;
 }
 
 .detail-desc {
@@ -541,6 +556,13 @@ body {
     right: 12px;
     left: 12px;
     width: auto;
+  }
+
+  /* 窄屏时卡片几乎占满宽度，说明气泡改回向下展开，避免超出屏幕 */
+  .info-tip {
+    right: 10px;
+    top: 44px;
+    width: min(246px, 74vw);
   }
 
   .hud-note {

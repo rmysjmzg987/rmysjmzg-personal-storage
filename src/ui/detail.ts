@@ -56,60 +56,60 @@ export function mountDetail(
 
   closeButton.addEventListener('click', () => callbacks.onClose());
   lockButton.addEventListener('click', () => callbacks.onToggleLock());
+  // 指针停在卡片上时冻结数值刷新：悬停 (i) 图标时不再改动 DOM，
+  // 从根上避免提示气泡被打断造成的闪烁/抖动
+  let pointerInside = false;
+  card.addEventListener('pointerenter', () => {
+    pointerInside = true;
+  });
+  card.addEventListener('pointerleave', () => {
+    pointerInside = false;
+  });
 
-  function renderRows(view: DetailView): void {
-    const rows: [string, string][] = [
-      [t(view.lang, 'altitude'), view.altitude],
-      [t(view.lang, 'speed'), view.speed],
-      [t(view.lang, 'period'), view.period],
-      [t(view.lang, 'inclination'), view.inclination],
-      [t(view.lang, 'eccentricity'), view.eccentricity],
-      [t(view.lang, 'subpoint'), view.subpoint],
-      [t(view.lang, 'fov'), view.fov],
-    ];
+  // 行结构只建一次：详情每 320ms 刷新，重建 DOM 会让悬停中的轨道说明闪烁
+  const ROW_KEYS = ['altitude', 'speed', 'period', 'inclination', 'eccentricity', 'subpoint', 'fov'] as const;
 
-    rowsEl.innerHTML = '';
+  const typeRow = document.createElement('div');
+  typeRow.className = 'detail-row';
+  const typeKey = document.createElement('span');
+  typeKey.className = 'key';
+  const typeKeyText = document.createElement('span');
+  typeKeyText.dataset.role = 'type-key';
+  const infoIcon = document.createElement('span');
+  infoIcon.className = 'info-icon';
+  infoIcon.tabIndex = 0;
+  infoIcon.textContent = 'i';
+  const tip = document.createElement('span');
+  tip.className = 'info-tip';
+  const tipTitle = document.createElement('strong');
+  const tipBody = document.createElement('span');
+  tipBody.className = 'info-tip-body';
+  tip.append(tipTitle, tipBody);
+  infoIcon.appendChild(tip);
+  typeKey.append(typeKeyText, infoIcon);
 
-    const typeRow = document.createElement('div');
-    typeRow.className = 'detail-row';
-    const typeKey = document.createElement('span');
-    typeKey.className = 'key';
-    typeKey.append(t(view.lang, 'orbitType'));
-    const infoIcon = document.createElement('span');
-    infoIcon.className = 'info-icon';
-    infoIcon.tabIndex = 0;
-    infoIcon.textContent = 'i';
-    infoIcon.setAttribute('aria-label', t(view.lang, 'orbitTypeHint'));
-    const tip = document.createElement('span');
-    tip.className = 'info-tip';
-    const tipTitle = document.createElement('strong');
-    tipTitle.textContent = `${view.typeName} · ${view.typeNameEn}`;
-    tip.append(tipTitle, document.createTextNode(view.typeDesc));
-    infoIcon.appendChild(tip);
-    typeKey.appendChild(infoIcon);
+  const typeValue = document.createElement('span');
+  typeValue.className = 'value detail-type';
+  const typeDot = document.createElement('span');
+  typeDot.className = 'type-dot';
+  const typeNameEl = document.createElement('span');
+  typeValue.append(typeDot, typeNameEl);
+  typeRow.append(typeKey, typeValue);
+  rowsEl.appendChild(typeRow);
 
-    const typeValue = document.createElement('span');
-    typeValue.className = 'value detail-type';
-    const dot = document.createElement('span');
-    dot.className = 'type-dot';
-    dot.style.background = view.typeColor;
-    dot.style.boxShadow = `0 0 8px ${view.typeColor}`;
-    typeValue.append(dot, document.createTextNode(view.typeName));
-    typeRow.append(typeKey, typeValue);
-    rowsEl.appendChild(typeRow);
-
-    for (const [key, value] of rows) {
-      const row = document.createElement('div');
-      row.className = 'detail-row';
-      const keyEl = document.createElement('span');
-      keyEl.className = 'key';
-      keyEl.textContent = key;
-      const valueEl = document.createElement('span');
-      valueEl.className = 'value';
-      valueEl.textContent = value;
-      row.append(keyEl, valueEl);
-      rowsEl.appendChild(row);
-    }
+  const rowValues = new Map<string, HTMLElement>();
+  const rowKeys = new Map<string, HTMLElement>();
+  for (const key of ROW_KEYS) {
+    const row = document.createElement('div');
+    row.className = 'detail-row';
+    const keyEl = document.createElement('span');
+    keyEl.className = 'key';
+    const valueEl = document.createElement('span');
+    valueEl.className = 'value';
+    row.append(keyEl, valueEl);
+    rowsEl.appendChild(row);
+    rowKeys.set(key, keyEl);
+    rowValues.set(key, valueEl);
   }
 
   return {
@@ -124,7 +124,31 @@ export function mountDetail(
       descEl.textContent = view.description;
       descEl.hidden = view.description.length === 0;
       lockButton.textContent = view.locked ? t(view.lang, 'unlock') : t(view.lang, 'lock');
-      renderRows(view);
+
+      if (pointerInside) return;
+
+      typeKeyText.textContent = t(view.lang, 'orbitType');
+      infoIcon.setAttribute('aria-label', t(view.lang, 'orbitTypeHint'));
+      tipTitle.textContent = `${view.typeName} · ${view.typeNameEn}`;
+      tipBody.textContent = view.typeDesc;
+      typeDot.style.background = view.typeColor;
+      typeDot.style.boxShadow = `0 0 8px ${view.typeColor}`;
+      typeNameEl.textContent = view.typeName;
+
+      const values: Record<(typeof ROW_KEYS)[number], string> = {
+        altitude: view.altitude,
+        speed: view.speed,
+        period: view.period,
+        inclination: view.inclination,
+        eccentricity: view.eccentricity,
+        subpoint: view.subpoint,
+        fov: view.fov,
+      };
+      for (const key of ROW_KEYS) {
+        rowKeys.get(key)!.textContent = t(view.lang, key);
+        const valueEl = rowValues.get(key)!;
+        if (valueEl.textContent !== values[key]) valueEl.textContent = values[key];
+      }
     },
   };
 }

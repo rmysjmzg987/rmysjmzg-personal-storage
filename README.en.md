@@ -7,9 +7,10 @@ A self-contained, front-end-only 3D satellite orbit visualiser. It uses real TLE
 ## Highlights
 
 - **Real orbits**: 18 preset satellites covering nine orbit classes — equatorial LEO, polar, Sun-synchronous, low Earth, medium Earth, inclined geosynchronous, geostationary, highly elliptical (Molniya) and retrograde.
-- **Click to lock on**: the camera flies in and tracks the satellite along its local zenith; release to return to the global view.
+- **Click to lock on**: click a satellite dot, or just its orbit line, and the camera flies in to a "satellite above, Earth below" framing; release to return to the global view.
 - **Sensor footprint**: a field-of-view cone plus a ground coverage ring follows the satellite; city labels swept by the cone turn gold and pulse.
 - **Detail card**: orbit type (with hover explanation), live altitude, speed, period, inclination, eccentricity, sub-satellite point, field of view and a short description.
+- **Orbit-type cheat sheet**: hover the ⓘ next to the orbit type for a plain-language explanation; the card freezes its refresh while the pointer is over it, so the numbers stay put.
 - **Add your own satellites**: paste a TLE (2 or 3 lines), build one from orbital elements with six quick templates, or pick from the built-in library of 58 real satellites (Landsat 8, Terra, Aqua, Sentinel-1/2/3/6, NOAA, Fengyun, GOES, Himawari, BeiDou, GPS, Galileo, Hubble, XMM-Newton, Tiangong, Shenzhou and more).
 - **Local persistence**: custom satellites and enabled library entries live in localStorage and can be exported/imported as JSON.
 - **Bilingual UI**: Chinese and English for interface, city names, satellite names and orbit descriptions.
@@ -39,6 +40,7 @@ A workflow is included. Push to `main`, then choose **Settings → Pages → Sou
 | Action | Result |
 | --- | --- |
 | Click a satellite dot | Lock on and follow it |
+| Click an orbit line | Also locks that satellite (handy when the dot is tiny) |
 | Hover a satellite dot | Name/altitude tooltip plus footprint preview |
 | Drag / wheel | Orbit and zoom (still available while locked) |
 | Click empty space or press Esc | Release the lock |
@@ -53,7 +55,7 @@ Debug helpers: append `?lock=25544` (NORAD id) to lock a satellite directly, or 
 - **TLE snapshot**: `public/data/catalog.json`, captured from [CelesTrak](https://celestrak.org/).
 - **Propagation**: SGP4 via [satellite.js](https://github.com/shashwatak/satellite-js), run locally against device time.
 - **Cities**: `public/data/cities.json` (102 cities).
-- **Textures**: NASA Blue Marble (day) and Black Marble (night).
+- **Textures**: NASA Blue Marble topo/bathymetry (day, 5400x2700) and NASA VIIRS 2012 night lights (3600x1800), both equirectangular and registered to the rotation angle and city coordinates.
 
 Refresh the data (needs network access):
 
@@ -66,10 +68,17 @@ npm run fetch:textures
 
 TypeScript + Vite + three.js + satellite.js (SGP4) + plain DOM/CSS, no UI framework. Tests use Vitest.
 
+Implementation notes:
+
+- Positions and velocities are computed live in the browser; nothing is pre-baked.
+- The lock camera aims along the satellite's local zenith for a "satellite above, Earth below" shot, keeps north up with a rate-limited roll, and falls back to parallel transport near the poles so the view never flips or gimbal-locks.
+- Orbit-line picking measures point-to-segment distance in screen space, so you can lock a satellite without hunting for its dot (segments behind the Earth are discarded).
+
 ## Limitations
 
 - TLE data ages: positions drift as the snapshot gets older; the page does not fetch updates at runtime.
 - The footprint is a circular approximation — no off-nadir steering, scan strips or real sensor swath.
+- Texture resolution is finite, so the ground still softens when the camera gets very close; drop your own images into `public/textures/` to replace them.
 
 ## License
 
